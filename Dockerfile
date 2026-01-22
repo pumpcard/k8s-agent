@@ -30,11 +30,11 @@ WORKDIR /app
 # Copy the binary from builder
 COPY --from=builder /app/k8s-agent .
 
-# Change ownership to k8s-agent user (non-root)
-RUN chown -R 1001:1001 /app
+# Change ownership to allow any user to run the binary
+RUN chmod 755 /app/k8s-agent
 
 # Switch to non-root user (service-specific user for better observability)
-USER 1001:1001
+USER 65532:65532
 
 # Run the application
 CMD ["./k8s-agent"]
