@@ -22,10 +22,8 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -ldflag
 # Runtime stage
 FROM alpine:latest
 
-# Install ca-certificates for HTTPS requests and create non-root user
-RUN apk --no-cache add ca-certificates tzdata && \
-    addgroup -S -g 1001 k8s-agent && \
-    adduser -S -u 1001 -G k8s-agent k8s-agent
+# Install ca-certificates for HTTPS requests
+RUN apk --no-cache add ca-certificates tzdata
 
 WORKDIR /app
 
@@ -33,10 +31,10 @@ WORKDIR /app
 COPY --from=builder /app/k8s-agent .
 
 # Change ownership to k8s-agent user (non-root)
-RUN chown -R k8s-agent:k8s-agent /app
+RUN chown -R 1001:1001 /app
 
 # Switch to non-root user (service-specific user for better observability)
-USER k8s-agent
+USER 1001:1001
 
 # Run the application
 CMD ["./k8s-agent"]
