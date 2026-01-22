@@ -16,12 +16,22 @@ spec:
         {{- include "k8s-agent-test.selectorLabels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ include "k8s-agent-test.serviceAccountName" . }}
+      automountServiceAccountToken: true
+      # Pod-level security context - enforces non-root execution with explicit UID/GID
+      # UID 65532 matches the distroless:nonroot image's built-in user
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
       - name: {{ .Chart.Name }}
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
         imagePullPolicy: {{ .Values.image.pullPolicy }}
+        # Container-level security context - additional hardening
+        {{- with .Values.containerSecurityContext }}
         securityContext:
-          {{- toYaml .Values.securityContext | nindent 10 }}
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
         resources:
           {{- toYaml .Values.resources | nindent 10 }}
         volumeMounts:

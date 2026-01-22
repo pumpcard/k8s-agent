@@ -19,16 +19,25 @@ resources:
     memory: "256Mi"
     cpu: "100m"
 
-# Security context
-securityContext:
+# Pod-level security context
+# These settings apply to the entire pod and enforce non-root execution
+# UID 65532 matches the distroless:nonroot image's built-in user
+podSecurityContext:
   runAsNonRoot: true
-  readOnlyRootFilesystem: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container-level security context
+# These settings apply to individual containers for additional hardening
+containerSecurityContext:
   allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
   capabilities:
     drop:
       - ALL
-  seccompProfile:
-    type: RuntimeDefault
 
 # Namespace
 namespace: kube-system
