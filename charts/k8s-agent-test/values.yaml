@@ -19,9 +19,15 @@ resources:
     memory: "256Mi"
     cpu: "100m"
 
-# Security context
-securityContext:
+# Pod Security Context
+podSecurityContext:
   runAsNonRoot: true
+  runAsUser: 1001
+  runAsGroup: 1001
+  fsGroup: 1001
+
+# Container Security Context
+securityContext:
   readOnlyRootFilesystem: true
   allowPrivilegeEscalation: false
   capabilities:

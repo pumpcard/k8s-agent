@@ -24,8 +24,8 @@ FROM alpine:latest
 
 # Install ca-certificates for HTTPS requests and create non-root user
 RUN apk --no-cache add ca-certificates tzdata && \
-    addgroup -S k8s-agent && \
-    adduser -S -G k8s-agent k8s-agent
+    addgroup -S -g 1001 k8s-agent && \
+    adduser -S -u 1001 -G k8s-agent k8s-agent
 
 WORKDIR /app
 
