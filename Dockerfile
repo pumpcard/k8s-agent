@@ -1,6 +1,10 @@
 # Build stage
 FROM golang:1.21-alpine AS builder
 
+# Build arguments for multi-architecture support
+ARG TARGETOS=linux
+ARG TARGETARCH
+
 # Install build dependencies
 RUN apk add --no-cache git
 
@@ -16,14 +20,16 @@ RUN go mod download && go mod verify
 # Copy source code
 COPY main.go ./
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -ldflags="-w -s" -o k8s-agent .
+# Build the application for the target architecture
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -a -installsuffix cgo -ldflags="-w -s" -o k8s-agent .
 
 # Runtime stage
 FROM alpine:latest
 
-# Install ca-certificates for HTTPS requests
-RUN apk --no-cache add ca-certificates tzdata
+# Install ca-certificates for HTTPS requests and create non-root user with numeric UID
+RUN apk --no-cache add ca-certificates tzdata && \
+    addgroup -S -g 1000 k8s-agent && \
+    adduser -S -u 1000 -G k8s-agent k8s-agent
 
 WORKDIR /app
 
