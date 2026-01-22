@@ -3,24 +3,24 @@
 
 # Image configuration
 image:
-  repository: pump/k8s-agent-test
-  tag: "v1.0.0"
+  repository: andyatpump/k8s-agent-test
+  tag: "v1.3.0"
   pullPolicy: Always
 
 # Component configuration
-# Enable both cluster and node-level collection by default
+# Cluster-level component collects all metrics (node and pod level granularity)
 defaultComponents:
   enabled: true
 
-# Cluster-level component (Deployment - collects cluster-wide metrics)
+# Cluster-level component (Deployment - collects cluster-wide metrics with full granularity)
 components:
   cluster:
     enabled: true
     replicaCount: 1
   
-  # Node-level component (DaemonSet - one pod per node)
+  # Node-level component (DaemonSet - disabled by default, redundant with cluster component)
   node:
-    enabled: true
+    enabled: false
 
 # Resource limits and requests
 resources:
@@ -34,11 +34,15 @@ resources:
 # Pod Security Context
 podSecurityContext:
   runAsNonRoot: true
+<<<<<<< HEAD
   seccompProfile:
     type: RuntimeDefault
 
 # Container Security Context
 securityContext:
+=======
+  runAsUser: 1000
+>>>>>>> 13f1324 (feat(ENG-5958): agent pulling metrics from the node and pod)
   readOnlyRootFilesystem: true
   allowPrivilegeEscalation: false
   capabilities:

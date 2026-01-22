@@ -33,9 +33,6 @@ spec:
         volumeMounts:
         - name: tmp
           mountPath: /tmp
-        env:
-        - name: COLLECTION_MODE
-          value: "cluster"
         {{- if .Values.env }}
         {{- range .Values.env }}
         - name: {{ .name }}
