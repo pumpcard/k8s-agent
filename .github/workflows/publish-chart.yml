@@ -64,9 +64,10 @@ jobs:
       - name: Update chart repository index
         run: |
           cd gh-pages
+          # Copy chart file first, then index will include it
+          cp ../${{ env.CHART_FILE }} .
           helm repo index . --url https://pumpcard.github.io/k8s-agent --merge index.yaml || \
           helm repo index . --url https://pumpcard.github.io/k8s-agent
-          cp ../${{ env.CHART_FILE }} .
 
       - name: Commit and push to gh-pages
         run: |
