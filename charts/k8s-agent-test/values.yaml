@@ -20,6 +20,11 @@ resources:
     cpu: "100m"
 
 # Security context
+podSecurityContext:
+  runAsUser: 1001
+  runAsGroup: 1001
+  fsGroup: 1001
+
 securityContext:
   runAsNonRoot: true
   readOnlyRootFilesystem: true
