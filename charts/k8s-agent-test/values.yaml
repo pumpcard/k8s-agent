@@ -34,15 +34,10 @@ resources:
 # Pod Security Context
 podSecurityContext:
   runAsNonRoot: true
-<<<<<<< HEAD
-  seccompProfile:
-    type: RuntimeDefault
+  runAsUser: 1000
 
 # Container Security Context
 securityContext:
-=======
-  runAsUser: 1000
->>>>>>> 13f1324 (feat(ENG-5958): agent pulling metrics from the node and pod)
   readOnlyRootFilesystem: true
   allowPrivilegeEscalation: false
   capabilities:
