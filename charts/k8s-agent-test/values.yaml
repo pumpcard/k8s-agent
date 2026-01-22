@@ -22,6 +22,8 @@ resources:
 # Security context
 securityContext:
   runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
   readOnlyRootFilesystem: true
   allowPrivilegeEscalation: false
   capabilities:
@@ -29,6 +31,15 @@ securityContext:
       - ALL
   seccompProfile:
     type: RuntimeDefault
+
+# Pod-level security context (applies to the whole pod)
+podSecurityContext:
+  seccompProfile:
+    type: RuntimeDefault
+
+# Whether to mount the ServiceAccount token into the pod.
+# This agent uses in-cluster auth and typically requires this to be true.
+automountServiceAccountToken: true
 
 # Namespace
 namespace: kube-system
