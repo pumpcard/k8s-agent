@@ -19,16 +19,20 @@ resources:
     memory: "256Mi"
     cpu: "100m"
 
-# Security context
-securityContext:
+# Pod Security Context
+podSecurityContext:
   runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container Security Context
+securityContext:
   readOnlyRootFilesystem: true
   allowPrivilegeEscalation: false
   capabilities:
     drop:
       - ALL
-  seccompProfile:
-    type: RuntimeDefault
+
 
 # Namespace
 namespace: kube-system
