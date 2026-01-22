@@ -1,0 +1,78 @@
+name: Publish Helm Chart
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'charts/**'
+      - '.github/workflows/publish-chart.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'latest'
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Package chart
+        run: |
+          helm package charts/k8s-agent-test
+          CHART_VERSION=$(grep '^version:' charts/k8s-agent-test/Chart.yaml | awk '{print $2}')
+          echo "CHART_VERSION=$CHART_VERSION" >> $GITHUB_ENV
+          echo "CHART_FILE=k8s-agent-test-${CHART_VERSION}.tgz" >> $GITHUB_ENV
+
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create gh-pages branch if it doesn't exist
+        if: failure()
+        run: |
+          git checkout --orphan gh-pages
+          git rm -rf . || true
+          echo "# Helm Chart Repository" > index.md
+          git add index.md
+          git commit -m "Initial gh-pages commit"
+          git push origin gh-pages || true
+
+      - name: Update chart repository index
+        run: |
+          cd gh-pages
+          helm repo index . --url https://pumpcard.github.io/k8s-agent --merge index.yaml || \
+          helm repo index . --url https://pumpcard.github.io/k8s-agent
+          cp ../${{ env.CHART_FILE }} .
+
+      - name: Commit and push to gh-pages
+        run: |
+          cd gh-pages
+          git add .
+          git commit -m "Add chart version ${{ env.CHART_VERSION }}" || echo "No changes to commit"
+          git push origin gh-pages
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f k8s-agent-test-*.tgz

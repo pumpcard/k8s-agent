@@ -1,0 +1,13 @@
+apiVersion: v2
+name: k8s-agent-test
+description: A lightweight Kubernetes agent that collects cluster-level metrics
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - kubernetes
+  - metrics
+  - monitoring
+  - agent
+maintainers:
+  - name: k8s-agent-test

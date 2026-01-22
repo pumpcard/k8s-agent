@@ -1,0 +1,47 @@
+# Default values for k8s-agent-test
+# This is a YAML-formatted file.
+
+# Image configuration
+image:
+  repository: pump/k8s-agent-test
+  tag: "v1.0.0"
+  pullPolicy: Always
+
+# Deployment configuration
+replicaCount: 1
+
+# Resource limits and requests
+resources:
+  requests:
+    memory: "64Mi"
+    cpu: "20m"
+  limits:
+    memory: "256Mi"
+    cpu: "100m"
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  seccompProfile:
+    type: RuntimeDefault
+
+# Namespace
+namespace: kube-system
+
+# ServiceAccount
+serviceAccount:
+  create: true
+  name: ""
+
+# Labels
+labels:
+  app: k8s-agent-test
+  component: metrics-agent
+
+# Environment variables
+env: []
