@@ -1,27 +1,24 @@
-{{- if and .Values.defaultComponents.enabled (or (not (hasKey .Values "components")) .Values.components.cluster.enabled) }}
+{{- if and .Values.defaultComponents.enabled (or (not (hasKey .Values "components")) .Values.components.node.enabled) }}
 apiVersion: apps/v1
-kind: Deployment
+kind: DaemonSet
 metadata:
-  name: {{ include "k8s-agent-test.fullname" . }}-cluster
+  name: {{ include "k8s-agent-test.fullname" . }}-node
   namespace: {{ .Values.namespace }}
   labels:
     {{- include "k8s-agent-test.labels" . | nindent 4 }}
-    component: cluster
+    component: node
 spec:
-  replicas: {{ .Values.components.cluster.replicaCount | default 1 }}
   selector:
     matchLabels:
       {{- include "k8s-agent-test.selectorLabels" . | nindent 6 }}
-      component: cluster
+      component: node
   template:
     metadata:
       labels:
         {{- include "k8s-agent-test.selectorLabels" . | nindent 8 }}
-        component: cluster
+        component: node
     spec:
       serviceAccountName: {{ include "k8s-agent-test.serviceAccountName" . }}
-      securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
       - name: {{ .Chart.Name }}
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -33,9 +30,12 @@ spec:
         volumeMounts:
         - name: tmp
           mountPath: /tmp
+        - name: host-root
+          mountPath: /host
+          readOnly: true
         env:
         - name: COLLECTION_MODE
-          value: "cluster"
+          value: "node"
         {{- if .Values.env }}
         {{- range .Values.env }}
         - name: {{ .name }}
@@ -45,5 +45,14 @@ spec:
       volumes:
       - name: tmp
         emptyDir: {}
+      - name: host-root
+        hostPath:
+          path: /
+          type: Directory
       restartPolicy: Always
+      tolerations:
+      - effect: NoSchedule
+        operator: Exists
+      - effect: NoExecute
+        operator: Exists
 {{- end }}

@@ -17,8 +17,13 @@ helm repo add k8s-agent https://pumpcard.github.io/k8s-agent && \
 helm repo update && \
 helm upgrade --install k8s-agent-test \
     --namespace kube-system --create-namespace \
+    --set defaultComponents.enabled=true \
     k8s-agent/k8s-agent-test
 ```
+
+This installs both:
+- **Cluster-level agent** (Deployment) - collects cluster-wide metrics from the Kubernetes API
+- **Node-level agent** (DaemonSet) - one pod per node for node-specific metrics and host-level data
 
 ### Install from Local Chart
 
@@ -29,11 +34,14 @@ helm install k8s-agent-test ./charts/k8s-agent-test
 ### Verify Deployment
 
 ```bash
-# Check pod status
+# Check pod status (both cluster and node components)
 kubectl get pods -n kube-system -l app=k8s-agent-test
 
-# View logs
-kubectl logs -f deployment/k8s-agent-test -n kube-system
+# View cluster-level agent logs
+kubectl logs -f deployment/k8s-agent-test-cluster -n kube-system
+
+# View node-level agent logs (from any node)
+kubectl logs -f daemonset/k8s-agent-test-node -n kube-system
 ```
 
 ## Configuration
@@ -43,7 +51,21 @@ You can customize the deployment by overriding values:
 ```bash
 helm install k8s-agent-test ./charts/k8s-agent-test \
   --set image.tag=v1.0.1 \
-  --set replicaCount=2
+  --set components.cluster.replicaCount=2 \
+  --set defaultComponents.enabled=true
+```
+
+To disable specific components:
+```bash
+# Only cluster-level collection
+helm install k8s-agent-test ./charts/k8s-agent-test \
+  --set defaultComponents.enabled=true \
+  --set components.node.enabled=false
+
+# Only node-level collection
+helm install k8s-agent-test ./charts/k8s-agent-test \
+  --set defaultComponents.enabled=true \
+  --set components.cluster.enabled=false
 ```
 
 Or create a custom `values.yaml` file:

@@ -7,8 +7,20 @@ image:
   tag: "v1.0.0"
   pullPolicy: Always
 
-# Deployment configuration
-replicaCount: 1
+# Component configuration
+# Enable both cluster and node-level collection by default
+defaultComponents:
+  enabled: true
+
+# Cluster-level component (Deployment - collects cluster-wide metrics)
+components:
+  cluster:
+    enabled: true
+    replicaCount: 1
+  
+  # Node-level component (DaemonSet - one pod per node)
+  node:
+    enabled: true
 
 # Resource limits and requests
 resources:
