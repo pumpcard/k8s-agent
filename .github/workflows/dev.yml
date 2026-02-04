@@ -1,21 +1,73 @@
-name: Publish Helm Chart
+name: Dev Stage Build and Deploy (k8s-agent)
 
 on:
   push:
     branches:
       - main
+    paths:
+      - 'cmd/**'
+      - 'internal/**'
+      - 'charts/k8s-agent-test/**'
+      - 'Dockerfile'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/dev.yml'
   workflow_dispatch:
 
-permissions:
-  contents: write
-  pages: write
-  id-token: write
+concurrency:
+  group: ${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
-  publish:
+  build-push:
+    name: k8s-agent builder
     runs-on: ubuntu-latest
+    env:
+      ECR_REGISTRY: 258131496527.dkr.ecr.us-west-2.amazonaws.com
+      ECR_REPOSITORY: pump-dev
+      IMAGE_TAG: ${{ github.sha }}
+    permissions:
+      contents: read
+      id-token: write
     steps:
-      - name: Checkout code
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::258131496527:role/github-deployer
+          aws-region: us-west-2
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          install: true
+          driver-opts: image=moby/buildkit:v0.25.1
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}-k8s-agent
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest-k8s-agent
+
+  publish-chart:
+    name: Publish Helm chart
+    needs: [build-push]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: write
+    steps:
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -61,7 +113,6 @@ jobs:
       - name: Update chart repository index
         run: |
           cd gh-pages
-          # Copy chart file first, then index will include it
           cp ../${{ env.CHART_FILE }} .
           helm repo index . --url https://pumpcard.github.io/k8s-agent --merge index.yaml || \
           helm repo index . --url https://pumpcard.github.io/k8s-agent
@@ -78,5 +129,4 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: |
-          rm -f k8s-agent-test-*.tgz
+        run: rm -f k8s-agent-test-*.tgz
