@@ -15,7 +15,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-const defaultInterval = 60 * time.Second
+const defaultInterval = 3600 * time.Second
 
 func main() {
 	cfg, err := rest.InClusterConfig()
@@ -34,7 +34,7 @@ func main() {
 	}
 
 	exportCfg := exporter.ConfigFromEnv()
-	exportClient := exporter.NewClient()
+	exportClient := exporter.NewClient(exportCfg.Timeout)
 
 	for {
 		ctx := context.Background()

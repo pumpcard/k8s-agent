@@ -6,20 +6,24 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 )
 
 const defaultEndpoint = "https://api-dev.pump.co/metrics-ingestion/cluster-metrics"
+const defaultTimeout = 90 * time.Second
 
-// Config holds export destination and identity (cluster/customer).
+// Config holds export destination, identity (cluster/customer), and timeout.
 type Config struct {
 	Endpoint   string
 	Enabled    bool
 	ClusterID  string
 	CustomerID string
+	Timeout    time.Duration
 }
 
 // ConfigFromEnv builds config from environment variables.
+// METRICS_EXPORT_TIMEOUT_SECONDS sets HTTP client timeout (default 90).
 func ConfigFromEnv() Config {
 	endpoint := os.Getenv("METRICS_EXPORT_ENDPOINT")
 	enabled := endpoint != ""
@@ -37,11 +41,18 @@ func ConfigFromEnv() Config {
 	if customerID == "" {
 		customerID = "1"
 	}
+	timeout := defaultTimeout
+	if s := os.Getenv("METRICS_EXPORT_TIMEOUT_SECONDS"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 {
+			timeout = time.Duration(n) * time.Second
+		}
+	}
 	return Config{
 		Endpoint:   endpoint,
 		Enabled:    enabled,
 		ClusterID:  clusterID,
 		CustomerID: customerID,
+		Timeout:    timeout,
 	}
 }
 
@@ -49,9 +60,13 @@ type Client struct {
 	httpClient *http.Client
 }
 
-func NewClient() *Client {
+// NewClient creates an export client with the given timeout.
+func NewClient(timeout time.Duration) *Client {
+	if timeout <= 0 {
+		timeout = defaultTimeout
+	}
 	return &Client{
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		httpClient: &http.Client{Timeout: timeout},
 	}
 }
 
