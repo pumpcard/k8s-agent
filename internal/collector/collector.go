@@ -10,8 +10,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-// ClusterMetricsPayload matches the API request body for POST /metrics-ingestion/cluster-metrics.
-// Cluster and customer identity are sent via X-Cluster-Id and X-Customer-Id headers only.
 type ClusterMetricsPayload struct {
 	Timestamp      string         `json:"timestamp"`
 	CollectionMode string         `json:"collection_mode"`
@@ -43,10 +41,10 @@ type ClusterSummary struct {
 
 // ResourceMetrics matches API: both string quantities and numeric fields required.
 type ResourceMetrics struct {
-	CPU            string `json:"cpu"`             // Kubernetes quantity e.g. "4", "3920m"
-	Memory         string `json:"memory"`           // Kubernetes quantity e.g. "16Gi", "8Mi"
-	CPUMillicores  int64  `json:"cpu_millicores"`
-	MemoryBytes    int64  `json:"memory_bytes"`
+	CPU           string `json:"cpu"`    // Kubernetes quantity e.g. "4", "3920m"
+	Memory        string `json:"memory"` // Kubernetes quantity e.g. "16Gi", "8Mi"
+	CPUMillicores int64  `json:"cpu_millicores"`
+	MemoryBytes   int64  `json:"memory_bytes"`
 }
 
 type NodeCondition struct {
@@ -57,17 +55,17 @@ type NodeCondition struct {
 }
 
 type NodeMetrics struct {
-	Name           string               `json:"name"`
-	Architecture   string               `json:"architecture"`
-	KubeletVersion string               `json:"kubelet_version"`
-	OSImage        string               `json:"os_image"`
-	Capacity       ResourceMetrics      `json:"capacity"`
-	Allocatable    ResourceMetrics      `json:"allocatable"`
-	Usage          ResourceMetrics      `json:"usage"`
-	Utilization    UtilizationMetrics   `json:"utilization"`
-	Health         NodeHealth           `json:"health"`
-	Conditions     []NodeCondition      `json:"conditions"`
-	Pods           []PodSummary         `json:"pods"`
+	Name           string             `json:"name"`
+	Architecture   string             `json:"architecture"`
+	KubeletVersion string             `json:"kubelet_version"`
+	OSImage        string             `json:"os_image"`
+	Capacity       ResourceMetrics    `json:"capacity"`
+	Allocatable    ResourceMetrics    `json:"allocatable"`
+	Usage          ResourceMetrics    `json:"usage"`
+	Utilization    UtilizationMetrics `json:"utilization"`
+	Health         NodeHealth         `json:"health"`
+	Conditions     []NodeCondition    `json:"conditions"`
+	Pods           []PodSummary       `json:"pods"`
 }
 
 // UtilizationMetrics status: healthy | warning | critical | unknown
@@ -279,7 +277,6 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID, custo
 		return empty
 	}
 
-	// Build all pod summaries and group by node name.
 	podsByNode := make(map[string][]PodSummary)
 	var running, pending, failed, succeeded int
 	for _, p := range pods.Items {
@@ -320,27 +317,26 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID, custo
 			labels = make(map[string]string)
 		}
 		ps := PodSummary{
-			Namespace:    p.Namespace,
-			Name:         p.Name,
-			Node:         p.Spec.NodeName,
-			Phase:        phaseAPI(p.Status.Phase),
-			QOSClass:     qosClassAPI(p.Status.QOSClass),
-			Ready:        podReady(p.Status.Conditions),
-			RestartCount: restartCount,
-			StartTime:    startTime,
-			Containers:   containers,
-			Requests:     resourceMetricsFromQuantities(*reqCPUQ, *reqMemQ),
-			Limits:       resourceMetricsFromQuantities(*limCPUQ, *limMemQ),
-			Usage:        nil,
-			Utilization:  nil,
-			Labels:       labels,
+			Namespace:      p.Namespace,
+			Name:           p.Name,
+			Node:           p.Spec.NodeName,
+			Phase:          phaseAPI(p.Status.Phase),
+			QOSClass:       qosClassAPI(p.Status.QOSClass),
+			Ready:          podReady(p.Status.Conditions),
+			RestartCount:   restartCount,
+			StartTime:      startTime,
+			Containers:     containers,
+			Requests:       resourceMetricsFromQuantities(*reqCPUQ, *reqMemQ),
+			Limits:         resourceMetricsFromQuantities(*limCPUQ, *limMemQ),
+			Usage:          nil,
+			Utilization:    nil,
+			Labels:         labels,
 			OwnerReference: podOwnerRef(p.OwnerReferences),
 		}
 		nodeName := p.Spec.NodeName
 		podsByNode[nodeName] = append(podsByNode[nodeName], ps)
 	}
 
-	// ClusterHealth: total usage as quantity strings (we have no metrics-server, so use "0").
 	var totalCapCPU, totalCapMem resource.Quantity
 	readyNodes := 0
 	for _, n := range nodes.Items {
@@ -372,7 +368,6 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID, custo
 		TotalMemoryCapacity:         totalCapMem.String(),
 	}
 
-	// Build node list with nested pods and API-shaped fields.
 	nodeList := make([]NodeMetrics, 0, len(nodes.Items))
 	for _, n := range nodes.Items {
 		capacity := n.Status.Capacity
@@ -393,7 +388,7 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID, custo
 			OSImage:        ni.OSImage,
 			Capacity:       resourceMetricsFromQuantities(capCPU, capMem),
 			Allocatable:    resourceMetricsFromQuantities(allocCPU, allocMem),
-			Usage:         resourceMetricsFromQuantities(zeroQ, zeroQ),
+			Usage:          resourceMetricsFromQuantities(zeroQ, zeroQ),
 			Utilization: UtilizationMetrics{
 				CPUPercent:    0,
 				MemoryPercent: 0,
