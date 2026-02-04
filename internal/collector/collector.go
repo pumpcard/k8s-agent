@@ -2,7 +2,6 @@ package collector
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -11,30 +10,27 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
+// ClusterMetricsPayload matches the API request body for POST /metrics-ingestion/cluster-metrics.
+// Cluster and customer identity are sent via X-Cluster-Id and X-Customer-Id headers only.
 type ClusterMetricsPayload struct {
 	Timestamp      string         `json:"timestamp"`
-	ClusterID      string         `json:"cluster_id,omitempty"`
-	CustomerID     string         `json:"customer_id,omitempty"`
 	CollectionMode string         `json:"collection_mode"`
-	ClusterHealth  *ClusterHealth `json:"cluster_health,omitempty"`
+	ClusterHealth  *ClusterHealth `json:"cluster_health"`
 	Summary        ClusterSummary `json:"summary"`
 	Nodes          []NodeMetrics  `json:"nodes"`
-	Pods           []PodSummary   `json:"pods"`
 }
 
 type ClusterHealth struct {
-	TotalNodes                    int     `json:"total_nodes"`
-	ReadyNodes                    int     `json:"ready_nodes"`
-	NotReadyNodes                 int     `json:"not_ready_nodes"`
-	OverallStatus                 string  `json:"overall_status"`
-	AvgCPUUtilizationPercent      float64 `json:"avg_cpu_utilization_percent"`
-	AvgMemoryUtilizationPercent   float64 `json:"avg_memory_utilization_percent"`
-	TotalCPUUsageMillicores       int64   `json:"total_cpu_usage_millicores"`
-	TotalMemoryUsageBytes         int64   `json:"total_memory_usage_bytes"`
-	TotalCPUCapacityMillicores    int64   `json:"total_cpu_capacity_millicores"`
-	TotalMemoryCapacityBytes      int64   `json:"total_memory_capacity_bytes"`
-	TotalCPUAllocatableMillicores int64   `json:"total_cpu_allocatable_millicores"`
-	TotalMemoryAllocatableBytes   int64   `json:"total_memory_allocatable_bytes"`
+	TotalNodes                  int     `json:"total_nodes"`
+	ReadyNodes                  int     `json:"ready_nodes"`
+	NotReadyNodes               int     `json:"not_ready_nodes"`
+	OverallStatus               string  `json:"overall_status"` // healthy | warning | degraded
+	AvgCPUUtilizationPercent    float64 `json:"avg_cpu_utilization_percent"`
+	AvgMemoryUtilizationPercent float64 `json:"avg_memory_utilization_percent"`
+	TotalCPUUsage               string  `json:"total_cpu_usage"`    // Kubernetes quantity format
+	TotalMemoryUsage            string  `json:"total_memory_usage"` // Kubernetes quantity format
+	TotalCPUCapacity            string  `json:"total_cpu_capacity"`
+	TotalMemoryCapacity         string  `json:"total_memory_capacity"`
 }
 
 type ClusterSummary struct {
@@ -45,64 +41,77 @@ type ClusterSummary struct {
 	SucceededPods int `json:"succeeded_pods"`
 }
 
+// ResourceMetrics matches API: both string quantities and numeric fields required.
+type ResourceMetrics struct {
+	CPU            string `json:"cpu"`             // Kubernetes quantity e.g. "4", "3920m"
+	Memory         string `json:"memory"`           // Kubernetes quantity e.g. "16Gi", "8Mi"
+	CPUMillicores  int64  `json:"cpu_millicores"`
+	MemoryBytes    int64  `json:"memory_bytes"`
+}
+
+type NodeCondition struct {
+	Type    string  `json:"type"`
+	Status  string  `json:"status"`
+	Reason  *string `json:"reason,omitempty"`
+	Message *string `json:"message,omitempty"`
+}
+
 type NodeMetrics struct {
-	Name           string           `json:"name"`
-	Architecture   string           `json:"architecture"`
-	KubeletVersion string           `json:"kubelet_version"`
-	OSImage        string           `json:"os_image"`
-	Capacity       *NodeResources   `json:"capacity,omitempty"`
-	Allocatable    *NodeResources   `json:"allocatable,omitempty"`
-	Usage          *NodeResources   `json:"usage,omitempty"` // 0 when no metrics-server
-	Utilization    *NodeUtilization `json:"utilization,omitempty"`
-	Health         *NodeHealth      `json:"health,omitempty"`
+	Name           string               `json:"name"`
+	Architecture   string               `json:"architecture"`
+	KubeletVersion string               `json:"kubelet_version"`
+	OSImage        string               `json:"os_image"`
+	Capacity       ResourceMetrics      `json:"capacity"`
+	Allocatable    ResourceMetrics      `json:"allocatable"`
+	Usage          ResourceMetrics      `json:"usage"`
+	Utilization    UtilizationMetrics   `json:"utilization"`
+	Health         NodeHealth           `json:"health"`
+	Conditions     []NodeCondition      `json:"conditions"`
+	Pods           []PodSummary         `json:"pods"`
 }
 
-type NodeResources struct {
-	CPUMillicores int64 `json:"cpu_millicores"`
-	MemoryBytes   int64 `json:"memory_bytes"`
-}
-
-type NodeUtilization struct {
+// UtilizationMetrics status: healthy | warning | critical | unknown
+type UtilizationMetrics struct {
 	CPUPercent    float64 `json:"cpu_percent"`
 	MemoryPercent float64 `json:"memory_percent"`
 	Status        string  `json:"status"`
 }
 
 type NodeHealth struct {
-	Ready              bool `json:"ready"`
-	MemoryPressure     bool `json:"memory_pressure"`
-	DiskPressure       bool `json:"disk_pressure"`
-	PIDPressure        bool `json:"pid_pressure"`
-	NetworkUnavailable bool `json:"network_unavailable"`
+	Ready              bool   `json:"ready"`
+	ReadyStatus        string `json:"ready_status"`
+	MemoryPressure     bool   `json:"memory_pressure"`
+	DiskPressure       bool   `json:"disk_pressure"`
+	PIDPressure        bool   `json:"pid_pressure"`
+	NetworkUnavailable bool   `json:"network_unavailable"`
+}
+
+type ContainerInfo struct {
+	Name         string  `json:"name"`
+	Image        string  `json:"image"`
+	Ready        bool    `json:"ready"`
+	RestartCount int     `json:"restart_count"`
+	State        string  `json:"state"` // running | waiting | terminated | pending
+	Reason       *string `json:"reason,omitempty"`
+	Message      *string `json:"message,omitempty"`
 }
 
 type PodSummary struct {
-	Namespace      string          `json:"namespace"`
-	Name           string          `json:"name"`
-	NodeName       string          `json:"node_name"`
-	Phase          string          `json:"phase"`
-	QOSClass       string          `json:"qos_class"`
-	Ready          bool            `json:"ready"`
-	RestartCount   int             `json:"restart_count"`
-	StartTime      *string         `json:"start_time,omitempty"` // RFC3339 or empty
-	OwnerReference string          `json:"owner_reference,omitempty"`
-	ContainerCount int             `json:"container_count"`
-	Requests       *PodResources   `json:"requests,omitempty"`
-	Limits         *PodResources   `json:"limits,omitempty"`
-	Usage          *PodResources   `json:"usage,omitempty"` // nil when no metrics-server
-	Utilization    *PodUtilization `json:"utilization,omitempty"`
-	Labels         string          `json:"labels"` // JSON object string
-}
-
-type PodResources struct {
-	CPUMillicores int64 `json:"cpu_millicores"`
-	MemoryBytes   int64 `json:"memory_bytes"`
-}
-
-type PodUtilization struct {
-	CPUPercent    *float64 `json:"cpu_percent,omitempty"`
-	MemoryPercent *float64 `json:"memory_percent,omitempty"`
-	Status        string   `json:"status,omitempty"`
+	Namespace      string              `json:"namespace"`
+	Name           string              `json:"name"`
+	Node           string              `json:"node"`
+	Phase          string              `json:"phase"`     // Pending | Running | Succeeded | Failed | Unknown
+	QOSClass       string              `json:"qos_class"` // Guaranteed | Burstable | BestEffort
+	Ready          bool                `json:"ready"`
+	RestartCount   int                 `json:"restart_count"`
+	StartTime      *string             `json:"start_time,omitempty"`
+	Containers     []ContainerInfo     `json:"containers"`
+	Requests       ResourceMetrics     `json:"requests"`
+	Limits         ResourceMetrics     `json:"limits"`
+	Usage          *ResourceMetrics    `json:"usage,omitempty"`
+	Utilization    *UtilizationMetrics `json:"utilization,omitempty"`
+	Labels         map[string]string   `json:"labels,omitempty"`
+	OwnerReference *string             `json:"owner_reference,omitempty"`
 }
 
 func quantityToMilli(q resource.Quantity) int64 {
@@ -111,6 +120,20 @@ func quantityToMilli(q resource.Quantity) int64 {
 
 func quantityToBytes(q resource.Quantity) int64 {
 	return q.Value()
+}
+
+// quantityToString returns Kubernetes quantity format string (e.g. "4", "3920m", "16Gi").
+func quantityToString(q resource.Quantity) string {
+	return q.String()
+}
+
+func resourceMetricsFromQuantities(cpu resource.Quantity, mem resource.Quantity) ResourceMetrics {
+	return ResourceMetrics{
+		CPU:           quantityToString(cpu),
+		Memory:        quantityToString(mem),
+		CPUMillicores: quantityToMilli(cpu),
+		MemoryBytes:   quantityToBytes(mem),
+	}
 }
 
 func nodeConditionStatus(conditions []corev1.NodeCondition, t corev1.NodeConditionType) bool {
@@ -122,7 +145,7 @@ func nodeConditionStatus(conditions []corev1.NodeCondition, t corev1.NodeConditi
 	return false
 }
 
-func nodeStatusFromReady(conditions []corev1.NodeCondition) string {
+func nodeReadyStatus(conditions []corev1.NodeCondition) string {
 	for _, c := range conditions {
 		if c.Type == corev1.NodeReady {
 			if c.Status == corev1.ConditionTrue {
@@ -134,6 +157,24 @@ func nodeStatusFromReady(conditions []corev1.NodeCondition) string {
 	return "Unknown"
 }
 
+func nodeConditionsFromK8s(conditions []corev1.NodeCondition) []NodeCondition {
+	out := make([]NodeCondition, 0, len(conditions))
+	for _, c := range conditions {
+		nc := NodeCondition{
+			Type:   string(c.Type),
+			Status: string(c.Status),
+		}
+		if c.Reason != "" {
+			nc.Reason = &c.Reason
+		}
+		if c.Message != "" {
+			nc.Message = &c.Message
+		}
+		out = append(out, nc)
+	}
+	return out
+}
+
 func podReady(conditions []corev1.PodCondition) bool {
 	for _, c := range conditions {
 		if c.Type == corev1.PodReady {
@@ -143,17 +184,90 @@ func podReady(conditions []corev1.PodCondition) bool {
 	return false
 }
 
-func podOwnerRef(owners []metav1.OwnerReference) string {
+func podOwnerRef(owners []metav1.OwnerReference) *string {
 	if len(owners) == 0 {
-		return ""
+		return nil
 	}
-	o := owners[0]
-	return o.Kind + "/" + o.Name
+	s := owners[0].Kind + "/" + owners[0].Name
+	return &s
+}
+
+func containerState(cs *corev1.ContainerState) string {
+	if cs == nil {
+		return "pending"
+	}
+	if cs.Running != nil {
+		return "running"
+	}
+	if cs.Waiting != nil {
+		return "waiting"
+	}
+	if cs.Terminated != nil {
+		return "terminated"
+	}
+	return "pending"
+}
+
+func containerInfoFromStatus(spec corev1.Container, status *corev1.ContainerStatus) ContainerInfo {
+	ci := ContainerInfo{
+		Name:  spec.Name,
+		Image: spec.Image,
+		State: "pending",
+	}
+	if status != nil {
+		ci.Ready = status.Ready
+		ci.RestartCount = int(status.RestartCount)
+		ci.State = containerState(&status.State)
+		if status.State.Waiting != nil {
+			ci.Reason = &status.State.Waiting.Reason
+			ci.Message = &status.State.Waiting.Message
+		}
+		if status.State.Terminated != nil {
+			ci.Reason = &status.State.Terminated.Reason
+			ci.Message = &status.State.Terminated.Message
+		}
+	}
+	return ci
+}
+
+// phaseAPI returns API enum: Pending | Running | Succeeded | Failed | Unknown
+func phaseAPI(p corev1.PodPhase) string {
+	switch p {
+	case corev1.PodPending:
+		return "Pending"
+	case corev1.PodRunning:
+		return "Running"
+	case corev1.PodSucceeded:
+		return "Succeeded"
+	case corev1.PodFailed:
+		return "Failed"
+	default:
+		return "Unknown"
+	}
+}
+
+// qosClassAPI returns API enum: Guaranteed | Burstable | BestEffort
+func qosClassAPI(q corev1.PodQOSClass) string {
+	switch q {
+	case corev1.PodQOSGuaranteed:
+		return "Guaranteed"
+	case corev1.PodQOSBurstable:
+		return "Burstable"
+	case corev1.PodQOSBestEffort:
+		return "BestEffort"
+	default:
+		return "BestEffort"
+	}
 }
 
 func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID, customerID string) ClusterMetricsPayload {
 	ts := time.Now().UTC().Format(time.RFC3339)
-	empty := ClusterMetricsPayload{Timestamp: ts}
+	empty := ClusterMetricsPayload{
+		Timestamp:      ts,
+		CollectionMode: "cluster",
+		Summary:        ClusterSummary{},
+		Nodes:          []NodeMetrics{},
+	}
 
 	nodes, err := client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -165,75 +279,9 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID, custo
 		return empty
 	}
 
-	var nodeList []NodeMetrics
-	var totalCapCPU, totalCapMem, totalAllocCPU, totalAllocMem int64
-	readyNodes := 0
-	for _, n := range nodes.Items {
-		capacity := n.Status.Capacity
-		allocatable := n.Status.Allocatable
-		capCPU := quantityToMilli(capacity[corev1.ResourceCPU])
-		capMem := quantityToBytes(capacity[corev1.ResourceMemory])
-		allocCPU := quantityToMilli(allocatable[corev1.ResourceCPU])
-		allocMem := quantityToBytes(allocatable[corev1.ResourceMemory])
-		totalCapCPU += capCPU
-		totalCapMem += capMem
-		totalAllocCPU += allocCPU
-		totalAllocMem += allocMem
-		if nodeConditionStatus(n.Status.Conditions, corev1.NodeReady) {
-			readyNodes++
-		}
-
-		ni := n.Status.NodeInfo
-		nodeList = append(nodeList, NodeMetrics{
-			Name:           n.Name,
-			Architecture:   ni.Architecture,
-			KubeletVersion: ni.KubeletVersion,
-			OSImage:        ni.OSImage,
-			Capacity: &NodeResources{
-				CPUMillicores: capCPU,
-				MemoryBytes:   capMem,
-			},
-			Allocatable: &NodeResources{
-				CPUMillicores: allocCPU,
-				MemoryBytes:   allocMem,
-			},
-			Usage: &NodeResources{0, 0}, // no metrics-server in agent
-			Utilization: &NodeUtilization{
-				CPUPercent:    0,
-				MemoryPercent: 0,
-				Status:        nodeStatusFromReady(n.Status.Conditions),
-			},
-			Health: &NodeHealth{
-				Ready:              nodeConditionStatus(n.Status.Conditions, corev1.NodeReady),
-				MemoryPressure:     nodeConditionStatus(n.Status.Conditions, corev1.NodeMemoryPressure),
-				DiskPressure:       nodeConditionStatus(n.Status.Conditions, corev1.NodeDiskPressure),
-				PIDPressure:        nodeConditionStatus(n.Status.Conditions, corev1.NodePIDPressure),
-				NetworkUnavailable: nodeConditionStatus(n.Status.Conditions, corev1.NodeNetworkUnavailable),
-			},
-		})
-	}
-
-	overallStatus := "Healthy"
-	if readyNodes < len(nodes.Items) {
-		overallStatus = "Degraded"
-	}
-	if len(nodes.Items) == 0 {
-		overallStatus = "Unknown"
-	}
-
-	clusterHealth := &ClusterHealth{
-		TotalNodes:                    len(nodes.Items),
-		ReadyNodes:                    readyNodes,
-		NotReadyNodes:                 len(nodes.Items) - readyNodes,
-		OverallStatus:                 overallStatus,
-		TotalCPUCapacityMillicores:    totalCapCPU,
-		TotalMemoryCapacityBytes:      totalCapMem,
-		TotalCPUAllocatableMillicores: totalAllocCPU,
-		TotalMemoryAllocatableBytes:   totalAllocMem,
-	}
-
+	// Build all pod summaries and group by node name.
+	podsByNode := make(map[string][]PodSummary)
 	var running, pending, failed, succeeded int
-	podList := make([]PodSummary, 0, len(pods.Items))
 	for _, p := range pods.Items {
 		switch p.Status.Phase {
 		case corev1.PodRunning:
@@ -245,54 +293,130 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID, custo
 		case corev1.PodSucceeded:
 			succeeded++
 		}
-
 		restartCount := 0
-		for _, cs := range p.Status.ContainerStatuses {
+		containers := make([]ContainerInfo, 0, len(p.Spec.Containers))
+		statusByName := make(map[string]*corev1.ContainerStatus)
+		for i := range p.Status.ContainerStatuses {
+			cs := &p.Status.ContainerStatuses[i]
+			statusByName[cs.Name] = cs
 			restartCount += int(cs.RestartCount)
+		}
+		for _, c := range p.Spec.Containers {
+			containers = append(containers, containerInfoFromStatus(c, statusByName[c.Name]))
 		}
 		var startTime *string
 		if p.Status.StartTime != nil {
 			s := p.Status.StartTime.Format(time.RFC3339)
 			startTime = &s
 		}
-		qos := string(p.Status.QOSClass)
-		if qos == "" {
-			qos = "BestEffort"
-		}
 		reqCPU, reqMem := sumContainerRequestsLimits(p.Spec.Containers, false)
 		limCPU, limMem := sumContainerRequestsLimits(p.Spec.Containers, true)
-		phase := string(p.Status.Phase)
-		if phase == "" {
-			phase = "Unknown"
+		reqCPUQ := resource.NewMilliQuantity(reqCPU, resource.DecimalSI)
+		reqMemQ := resource.NewQuantity(reqMem, resource.BinarySI)
+		limCPUQ := resource.NewMilliQuantity(limCPU, resource.DecimalSI)
+		limMemQ := resource.NewQuantity(limMem, resource.BinarySI)
+		labels := p.Labels
+		if labels == nil {
+			labels = make(map[string]string)
 		}
-		labelsJSON := "{}"
-		if len(p.Labels) > 0 {
-			b, _ := json.Marshal(p.Labels)
-			labelsJSON = string(b)
-		}
-		podList = append(podList, PodSummary{
-			Namespace:      p.Namespace,
-			Name:           p.Name,
-			NodeName:       p.Spec.NodeName,
-			Phase:          phase,
-			QOSClass:       qos,
-			Ready:          podReady(p.Status.Conditions),
-			RestartCount:   restartCount,
-			StartTime:      startTime,
+		ps := PodSummary{
+			Namespace:    p.Namespace,
+			Name:         p.Name,
+			Node:         p.Spec.NodeName,
+			Phase:        phaseAPI(p.Status.Phase),
+			QOSClass:     qosClassAPI(p.Status.QOSClass),
+			Ready:        podReady(p.Status.Conditions),
+			RestartCount: restartCount,
+			StartTime:    startTime,
+			Containers:   containers,
+			Requests:     resourceMetricsFromQuantities(*reqCPUQ, *reqMemQ),
+			Limits:       resourceMetricsFromQuantities(*limCPUQ, *limMemQ),
+			Usage:        nil,
+			Utilization:  nil,
+			Labels:       labels,
 			OwnerReference: podOwnerRef(p.OwnerReferences),
-			ContainerCount: len(p.Spec.Containers),
-			Requests:       &PodResources{CPUMillicores: reqCPU, MemoryBytes: reqMem},
-			Limits:         &PodResources{CPUMillicores: limCPU, MemoryBytes: limMem},
-			Usage:          nil,
-			Utilization:    nil,
-			Labels:         labelsJSON,
+		}
+		nodeName := p.Spec.NodeName
+		podsByNode[nodeName] = append(podsByNode[nodeName], ps)
+	}
+
+	// ClusterHealth: total usage as quantity strings (we have no metrics-server, so use "0").
+	var totalCapCPU, totalCapMem resource.Quantity
+	readyNodes := 0
+	for _, n := range nodes.Items {
+		cap := n.Status.Capacity
+		totalCapCPU.Add(cap[corev1.ResourceCPU])
+		totalCapMem.Add(cap[corev1.ResourceMemory])
+		if nodeConditionStatus(n.Status.Conditions, corev1.NodeReady) {
+			readyNodes++
+		}
+	}
+	zeroQ := resource.MustParse("0")
+	overallStatus := "healthy"
+	if readyNodes < len(nodes.Items) {
+		overallStatus = "degraded"
+	}
+	if len(nodes.Items) == 0 {
+		overallStatus = "degraded"
+	}
+	clusterHealth := &ClusterHealth{
+		TotalNodes:                  len(nodes.Items),
+		ReadyNodes:                  readyNodes,
+		NotReadyNodes:               len(nodes.Items) - readyNodes,
+		OverallStatus:               overallStatus,
+		AvgCPUUtilizationPercent:    0,
+		AvgMemoryUtilizationPercent: 0,
+		TotalCPUUsage:               zeroQ.String(),
+		TotalMemoryUsage:            zeroQ.String(),
+		TotalCPUCapacity:            totalCapCPU.String(),
+		TotalMemoryCapacity:         totalCapMem.String(),
+	}
+
+	// Build node list with nested pods and API-shaped fields.
+	nodeList := make([]NodeMetrics, 0, len(nodes.Items))
+	for _, n := range nodes.Items {
+		capacity := n.Status.Capacity
+		allocatable := n.Status.Allocatable
+		capCPU := capacity[corev1.ResourceCPU]
+		capMem := capacity[corev1.ResourceMemory]
+		allocCPU := allocatable[corev1.ResourceCPU]
+		allocMem := allocatable[corev1.ResourceMemory]
+		ni := n.Status.NodeInfo
+		nodePods := podsByNode[n.Name]
+		if nodePods == nil {
+			nodePods = []PodSummary{}
+		}
+		nodeList = append(nodeList, NodeMetrics{
+			Name:           n.Name,
+			Architecture:   ni.Architecture,
+			KubeletVersion: ni.KubeletVersion,
+			OSImage:        ni.OSImage,
+			Capacity:       resourceMetricsFromQuantities(capCPU, capMem),
+			Allocatable:    resourceMetricsFromQuantities(allocCPU, allocMem),
+			Usage:         resourceMetricsFromQuantities(zeroQ, zeroQ),
+			Utilization: UtilizationMetrics{
+				CPUPercent:    0,
+				MemoryPercent: 0,
+				Status:        "unknown",
+			},
+			Health: NodeHealth{
+				Ready:              nodeConditionStatus(n.Status.Conditions, corev1.NodeReady),
+				ReadyStatus:        nodeReadyStatus(n.Status.Conditions),
+				MemoryPressure:     nodeConditionStatus(n.Status.Conditions, corev1.NodeMemoryPressure),
+				DiskPressure:       nodeConditionStatus(n.Status.Conditions, corev1.NodeDiskPressure),
+				PIDPressure:        nodeConditionStatus(n.Status.Conditions, corev1.NodePIDPressure),
+				NetworkUnavailable: nodeConditionStatus(n.Status.Conditions, corev1.NodeNetworkUnavailable),
+			},
+			Conditions: nodeConditionsFromK8s(n.Status.Conditions),
+			Pods:       nodePods,
 		})
 	}
 
+	_ = clusterID
+	_ = customerID
+
 	return ClusterMetricsPayload{
 		Timestamp:      ts,
-		ClusterID:      clusterID,
-		CustomerID:     customerID,
 		CollectionMode: "cluster",
 		ClusterHealth:  clusterHealth,
 		Summary: ClusterSummary{
@@ -303,7 +427,6 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID, custo
 			SucceededPods: succeeded,
 		},
 		Nodes: nodeList,
-		Pods:  podList,
 	}
 }
 
