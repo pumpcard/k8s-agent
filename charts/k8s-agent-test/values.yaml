@@ -2,9 +2,10 @@
 # This is a YAML-formatted file.
 
 # Image configuration
+# Dev ECR default; for prod use: --set image.repository=016493718240.dkr.ecr.us-west-2.amazonaws.com/pump --set image.tag=<version>-k8s-agent
 image:
-  repository: andyatpump/k8s-agent-test
-  tag: "v1.3.0"
+  repository: 258131496527.dkr.ecr.us-west-2.amazonaws.com/pump-dev
+  tag: "latest-k8s-agent"
   pullPolicy: Always
 
 # Component configuration
