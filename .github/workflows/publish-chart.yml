@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'charts/**'
-      - '.github/workflows/publish-chart.yml'
   workflow_dispatch:
 
 permissions:
