@@ -65,5 +65,6 @@ metricsExport:
   endpoint: "https://api-dev.pump.co/metrics-ingestion/cluster-metrics"
   clusterId: "pump-prod"   # Override per cluster
   customerId: "1"
+  timeoutSeconds: 90
 
 env: []

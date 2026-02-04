@@ -41,6 +41,8 @@ spec:
           value: {{ .Values.metricsExport.clusterId | quote }}
         - name: CUSTOMER_ID
           value: {{ .Values.metricsExport.customerId | quote }}
+        - name: METRICS_EXPORT_TIMEOUT_SECONDS
+          value: {{ .Values.metricsExport.timeoutSeconds | default 90 | toString | quote }}
         {{- end }}
         {{- range .Values.env }}
         - name: {{ .name }}
