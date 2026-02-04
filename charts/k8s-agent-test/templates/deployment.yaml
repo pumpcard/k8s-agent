@@ -33,11 +33,18 @@ spec:
         volumeMounts:
         - name: tmp
           mountPath: /tmp
-        {{- if .Values.env }}
+        env:
+        {{- if and (hasKey .Values "metricsExport") .Values.metricsExport.enabled }}
+        - name: METRICS_EXPORT_ENDPOINT
+          value: {{ .Values.metricsExport.endpoint | quote }}
+        - name: CLUSTER_ID
+          value: {{ .Values.metricsExport.clusterId | quote }}
+        - name: CUSTOMER_ID
+          value: {{ .Values.metricsExport.customerId | quote }}
+        {{- end }}
         {{- range .Values.env }}
         - name: {{ .name }}
           value: {{ .value | quote }}
-        {{- end }}
         {{- end }}
       volumes:
       - name: tmp

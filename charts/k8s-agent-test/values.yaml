@@ -58,5 +58,11 @@ labels:
   app: k8s-agent-test
   component: metrics-agent
 
-# Environment variables
+# Metrics export: send cluster metrics to API (optional)
+metricsExport:
+  enabled: true
+  endpoint: "https://api-dev.pump.co/metrics-ingestion/cluster-metrics"
+  clusterId: "pump-prod"   # Override per cluster
+  customerId: "1"
+
 env: []
