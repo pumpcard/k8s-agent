@@ -3,9 +3,9 @@ entries:
   k8s-agent-test:
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-02-04T00:27:05.290612473Z"
+    created: "2026-02-04T01:14:07.100291008Z"
     description: A lightweight Kubernetes agent that collects cluster-level metrics
-    digest: c7ba4b269003604282507dd157503d12abe4cb7693aff7c7da4232d50c121ad9
+    digest: 19b6ff86e0b62b8aab519655b2c83f52f05b816f80c0dfc48d9b57a102ef12c6
     keywords:
     - kubernetes
     - metrics
@@ -18,4 +18,4 @@ entries:
     urls:
     - https://pumpcard.github.io/k8s-agent/k8s-agent-test-1.0.0.tgz
     version: 1.0.0
-generated: "2026-02-04T00:27:05.290121096Z"
+generated: "2026-02-04T01:14:07.099730188Z"
