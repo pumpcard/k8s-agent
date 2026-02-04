@@ -3,6 +3,7 @@ package exporter
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"time"
@@ -70,6 +71,10 @@ func (c *Client) Export(endpoint, clusterID, customerID string, body []byte) err
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		if len(body) > 0 {
+			return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, bytes.TrimSpace(body))
+		}
 		return fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
 	return nil
