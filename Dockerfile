@@ -14,10 +14,10 @@ COPY go.mod go.sum ./
 RUN go mod download && go mod verify
 
 # Copy source code
-COPY main.go ./
+COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -ldflags="-w -s" -o k8s-agent .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -ldflags="-w -s" -o k8s-agent ./cmd/k8s-agent
 
 # Runtime stage
 FROM alpine:latest
