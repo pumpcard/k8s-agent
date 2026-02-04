@@ -3,12 +3,24 @@
 
 # Image configuration
 image:
-  repository: pump/k8s-agent-test
-  tag: "v1.0.0"
+  repository: andyatpump/k8s-agent-test
+  tag: "v1.3.0"
   pullPolicy: Always
 
-# Deployment configuration
-replicaCount: 1
+# Component configuration
+# Cluster-level component collects all metrics (node and pod level granularity)
+defaultComponents:
+  enabled: true
+
+# Cluster-level component (Deployment - collects cluster-wide metrics with full granularity)
+components:
+  cluster:
+    enabled: true
+    replicaCount: 1
+  
+  # Node-level component (DaemonSet - disabled by default, redundant with cluster component)
+  node:
+    enabled: false
 
 # Resource limits and requests
 resources:
@@ -19,16 +31,19 @@ resources:
     memory: "256Mi"
     cpu: "100m"
 
-# Security context
-securityContext:
+# Pod Security Context
+podSecurityContext:
   runAsNonRoot: true
+  runAsUser: 1000
+
+# Container Security Context
+securityContext:
   readOnlyRootFilesystem: true
   allowPrivilegeEscalation: false
   capabilities:
     drop:
       - ALL
-  seccompProfile:
-    type: RuntimeDefault
+
 
 # Namespace
 namespace: kube-system
