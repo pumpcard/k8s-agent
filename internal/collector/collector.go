@@ -4,6 +4,10 @@ import (
 	"context"
 	"time"
 
+	"k8s-agent/internal/cloud"
+	_ "k8s-agent/internal/cloud/aws"
+	_ "k8s-agent/internal/cloud/azure"
+	_ "k8s-agent/internal/cloud/gcp"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -59,6 +63,12 @@ type NodeMetrics struct {
 	Architecture   string             `json:"architecture"`
 	KubeletVersion string             `json:"kubelet_version"`
 	OSImage        string             `json:"os_image"`
+	// Cloud provider fields for cost/RI/SP correlation (from labels and providerID)
+	Provider     string `json:"provider,omitempty"`      // aws, gcp, azure, or empty if unknown
+	InstanceType string `json:"instance_type,omitempty"` // e.g. m5.2xlarge, n2-standard-4
+	InstanceID   string `json:"instance_id,omitempty"`   // e.g. i-0abc123 (AWS), VM name (GCP/Azure)
+	Zone         string `json:"zone,omitempty"`          // availability zone, e.g. us-west-2a
+	Region       string `json:"region,omitempty"`       // e.g. us-west-2
 	Capacity       ResourceMetrics    `json:"capacity"`
 	Allocatable    ResourceMetrics    `json:"allocatable"`
 	Usage          ResourceMetrics    `json:"usage"`
@@ -153,6 +163,20 @@ func nodeReadyStatus(conditions []corev1.NodeCondition) string {
 		}
 	}
 	return "Unknown"
+}
+
+// nodeCloudInfo extracts instance type, instance ID, zone, region, provider from node labels and providerID.
+// Uses the cloud package for provider-specific parsing (AWS, GCP, Azure).
+func nodeCloudInfo(n *corev1.Node) (provider, instanceType, instanceID, zone, region string) {
+	instanceType, zone, region = cloud.Labels(n.Labels)
+	provider, instanceID, zoneFromProvider := cloud.Parse(n.Spec.ProviderID)
+	if zone == "" && zoneFromProvider != "" {
+		zone = zoneFromProvider
+	}
+	if region == "" && zone != "" {
+		region = cloud.ZoneToRegion(zone)
+	}
+	return provider, instanceType, instanceID, zone, region
 }
 
 func nodeConditionsFromK8s(conditions []corev1.NodeCondition) []NodeCondition {
@@ -377,6 +401,7 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID, custo
 		allocCPU := allocatable[corev1.ResourceCPU]
 		allocMem := allocatable[corev1.ResourceMemory]
 		ni := n.Status.NodeInfo
+		provider, instanceType, instanceID, zone, region := nodeCloudInfo(&n)
 		nodePods := podsByNode[n.Name]
 		if nodePods == nil {
 			nodePods = []PodSummary{}
@@ -386,6 +411,11 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID, custo
 			Architecture:   ni.Architecture,
 			KubeletVersion: ni.KubeletVersion,
 			OSImage:        ni.OSImage,
+			Provider:       provider,
+			InstanceType:   instanceType,
+			InstanceID:     instanceID,
+			Zone:           zone,
+			Region:         region,
 			Capacity:       resourceMetricsFromQuantities(capCPU, capMem),
 			Allocatable:    resourceMetricsFromQuantities(allocCPU, allocMem),
 			Usage:          resourceMetricsFromQuantities(zeroQ, zeroQ),

@@ -8,6 +8,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"k8s-agent/internal/auth"
 )
 
 const defaultEndpoint = "https://api-dev.pump.co/metrics-ingestion/cluster-metrics"
@@ -20,6 +22,7 @@ type Config struct {
 	ClusterID  string
 	CustomerID string
 	Timeout    time.Duration
+	Auth       *auth.TokenProvider // nil when auth not configured
 }
 
 // ConfigFromEnv builds config from environment variables.
@@ -47,26 +50,32 @@ func ConfigFromEnv() Config {
 			timeout = time.Duration(n) * time.Second
 		}
 	}
-	return Config{
+	cfg := Config{
 		Endpoint:   endpoint,
 		Enabled:    enabled,
 		ClusterID:  clusterID,
 		CustomerID: customerID,
 		Timeout:    timeout,
 	}
+	if authCfg := auth.ConfigFromEnv(); authCfg != nil {
+		cfg.Auth = auth.NewTokenProvider(*authCfg)
+	}
+	return cfg
 }
 
 type Client struct {
 	httpClient *http.Client
+	auth       *auth.TokenProvider
 }
 
-// NewClient creates an export client with the given timeout.
-func NewClient(timeout time.Duration) *Client {
+func NewClient(cfg Config) *Client {
+	timeout := cfg.Timeout
 	if timeout <= 0 {
 		timeout = defaultTimeout
 	}
 	return &Client{
 		httpClient: &http.Client{Timeout: timeout},
+		auth:       cfg.Auth,
 	}
 }
 
@@ -78,6 +87,13 @@ func (c *Client) Export(endpoint, clusterID, customerID string, body []byte) err
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Cluster-Id", clusterID)
 	req.Header.Set("X-Customer-Id", customerID)
+	if c.auth != nil {
+		token, err := c.auth.GetToken()
+		if err != nil {
+			return fmt.Errorf("auth token: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
