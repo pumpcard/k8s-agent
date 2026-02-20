@@ -15,7 +15,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-const defaultInterval = 15 * time.Minute
+const defaultInterval = 1 * time.Minute
 
 func main() {
 	cfg, err := rest.InClusterConfig()
