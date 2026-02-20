@@ -72,13 +72,4 @@ metricsExport:
 auth0:
   enabled: true
 
-# Optional: install metrics-server (Kubernetes resource metrics for kubectl top, HPA).
-# Set to true to install/upgrade metrics-server to a version compatible with K8s 1.29+;
-# leave false if your cluster already has metrics-server or you manage it elsewhere.
-metricsServer:
-  install: false
-
-# Subchart values for metrics-server when metricsServer.install is true (optional overrides)
-metrics-server: {}
-
 env: []

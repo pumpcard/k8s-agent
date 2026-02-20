@@ -11,9 +11,3 @@ keywords:
   - agent
 maintainers:
   - name: k8s-agent-test
-
-dependencies:
-  - name: metrics-server
-    version: "3.13.0"
-    repository: "https://kubernetes-sigs.github.io/metrics-server/"
-    condition: metricsServer.install
