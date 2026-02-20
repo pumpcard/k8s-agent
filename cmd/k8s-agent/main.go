@@ -36,6 +36,8 @@ func main() {
 	exportCfg := exporter.ConfigFromEnv()
 	exportClient := exporter.NewClient(exportCfg)
 
+	fmt.Fprintf(os.Stderr, "k8s-agent started (cluster=%s)\n", exportCfg.ClusterID)
+
 	for {
 		ctx := context.Background()
 		metrics := collector.Collect(ctx, client, exportCfg.ClusterID, exportCfg.CustomerID)
@@ -47,8 +49,20 @@ func main() {
 		}
 
 		if exportCfg.Enabled {
+			nodeCount := len(metrics.Nodes)
+			fmt.Fprintf(os.Stderr, "sending payload: %d bytes, %d nodes", len(jsonData), nodeCount)
+			if nodeCount > 0 {
+				n := &metrics.Nodes[0]
+				fmt.Fprintf(os.Stderr, " | first node: name=%s provider=%s instance_type=%s zone=%s region=%s",
+					n.Name, n.Provider, n.InstanceType, n.Zone, n.Region)
+			}
+			fmt.Fprintf(os.Stderr, "\n")
+			pretty, _ := json.MarshalIndent(metrics, "", "  ")
+			fmt.Fprintf(os.Stderr, "payload:\n%s\n", pretty)
 			if err := exportClient.Export(exportCfg.Endpoint, exportCfg.ClusterID, exportCfg.CustomerID, jsonData); err != nil {
 				fmt.Fprintf(os.Stderr, "metrics export: %v\n", err)
+			} else {
+				fmt.Fprintf(os.Stderr, "metrics export ok\n")
 			}
 		}
 
