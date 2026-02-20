@@ -3,9 +3,14 @@ entries:
   k8s-agent-test:
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-02-20T22:40:01.262431515Z"
+    created: "2026-02-20T23:13:02.336186913Z"
+    dependencies:
+    - condition: metricsServer.install
+      name: metrics-server
+      repository: https://kubernetes-sigs.github.io/metrics-server/
+      version: 3.13.0
     description: A lightweight Kubernetes agent that collects cluster-level metrics
-    digest: 396bc579f938fb7f1d89639f465276dfdaa984e32b27a485a6c09ab2ed8f4f87
+    digest: b5594afce68627bc4515b9739dcb7d3e6d8aee5c785201345cc872112c829f62
     keywords:
     - kubernetes
     - metrics
@@ -18,4 +23,4 @@ entries:
     urls:
     - https://pumpcard.github.io/k8s-agent/k8s-agent-test-1.0.0.tgz
     version: 1.0.0
-generated: "2026-02-20T22:40:01.261925761Z"
+generated: "2026-02-20T23:13:02.334389599Z"
