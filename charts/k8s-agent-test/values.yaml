@@ -67,4 +67,9 @@ metricsExport:
   customerId: "1"
   timeoutSeconds: 90
 
+# Auth0: pass via --set auth0.clientId=xxx --set auth0.clientSecret=xxx
+# Agent uses these to fetch Bearer token from Auth0
+auth0:
+  enabled: true
+
 env: []
