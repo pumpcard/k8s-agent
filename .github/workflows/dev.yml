@@ -77,6 +77,11 @@ jobs:
         with:
           version: 'latest'
 
+      - name: Update chart dependencies
+        run: |
+          helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
+          helm dependency update charts/k8s-agent-test
+
       - name: Configure Git
         run: |
           git config user.name "github-actions[bot]"
