@@ -16,7 +16,6 @@ import (
 )
 
 const (
-	// Collection/export interval (fixed for all clients).
 	collectionInterval = 15 * time.Minute
 )
 
