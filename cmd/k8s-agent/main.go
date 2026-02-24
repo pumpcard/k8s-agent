@@ -15,7 +15,10 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-const defaultInterval = 1 * time.Minute
+const (
+	// Collection/export interval (fixed for all clients).
+	collectionInterval = 15 * time.Minute
+)
 
 func main() {
 	cfg, err := rest.InClusterConfig()
@@ -44,7 +47,7 @@ func main() {
 		jsonData, err := json.Marshal(metrics)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "marshal metrics: %v\n", err)
-			time.Sleep(defaultInterval)
+			time.Sleep(collectionInterval)
 			continue
 		}
 
@@ -57,8 +60,6 @@ func main() {
 					n.Name, n.Provider, n.InstanceType, n.Zone, n.Region)
 			}
 			fmt.Fprintf(os.Stderr, "\n")
-			pretty, _ := json.MarshalIndent(metrics, "", "  ")
-			fmt.Fprintf(os.Stderr, "payload:\n%s\n", pretty)
 			if err := exportClient.Export(exportCfg.Endpoint, exportCfg.ClusterID, exportCfg.CustomerID, jsonData); err != nil {
 				fmt.Fprintf(os.Stderr, "metrics export: %v\n", err)
 			} else {
@@ -66,6 +67,6 @@ func main() {
 			}
 		}
 
-		time.Sleep(defaultInterval)
+		time.Sleep(collectionInterval)
 	}
 }
