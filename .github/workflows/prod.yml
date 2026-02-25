@@ -43,7 +43,9 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
         with:
           registry-type: public
-          region: us-east-1
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_REGION: us-east-1
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
