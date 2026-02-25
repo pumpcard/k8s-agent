@@ -28,3 +28,8 @@ func (Provider) Parse(providerID string) (instanceID, zone string) {
 	}
 	return "", ""
 }
+
+// ProjectID returns empty string; Azure providerID uses subscription/resource group, not project.
+func (Provider) ProjectID(providerID string) string {
+	return ""
+}

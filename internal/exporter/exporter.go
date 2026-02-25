@@ -19,7 +19,6 @@ const defaultTimeout = 90 * time.Second
 type Config struct {
 	Endpoint   string
 	Enabled    bool
-	ClusterID  string
 	CustomerID string
 	Timeout    time.Duration
 	Auth       *auth.TokenProvider // nil when auth not configured
@@ -36,10 +35,6 @@ func ConfigFromEnv() Config {
 	if v := os.Getenv("METRICS_EXPORT_ENABLED"); v == "false" || v == "0" {
 		enabled = false
 	}
-	clusterID := os.Getenv("CLUSTER_ID")
-	if clusterID == "" {
-		clusterID = "unknown"
-	}
 	customerID := os.Getenv("CUSTOMER_ID")
 	if customerID == "" {
 		customerID = "1"
@@ -53,7 +48,6 @@ func ConfigFromEnv() Config {
 	cfg := Config{
 		Endpoint:   endpoint,
 		Enabled:    enabled,
-		ClusterID:  clusterID,
 		CustomerID: customerID,
 		Timeout:    timeout,
 	}

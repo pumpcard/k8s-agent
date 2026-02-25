@@ -4,7 +4,7 @@ A lightweight Kubernetes agent that collects cluster-level metrics from any Kube
 
 ## Prerequisites
 
-- EKS cluster (or any Kubernetes cluster)
+- Kubernetes cluster (EKS, GKE, AKS, or any compatible cluster)
 - `kubectl` configured to access your cluster
 - `helm` installed (v3.x)
 
@@ -15,7 +15,7 @@ A lightweight Kubernetes agent that collects cluster-level metrics from any Kube
 When your backend requires a valid JWT, pass your `client_id` and `client_secret` from Auth0. The agent fetches the Bearer token automatically (domain and audience are built-in):
 
 ```bash
-helm upgrade --install k8s-agent-test ./charts/k8s-agent-test \
+helm upgrade --install k8s-agent ./charts/k8s-agent \
   --namespace kube-system --create-namespace \
   --set defaultComponents.enabled=true \
   --set auth0.clientId="YOUR_CLIENT_ID" \
@@ -29,20 +29,20 @@ This installs both:
 ### Install from Local Chart
 
 ```bash
-helm install k8s-agent-test ./charts/k8s-agent-test
+helm install k8s-agent ./charts/k8s-agent
 ```
 
 ### Verify Deployment
 
 ```bash
 # Check pod status (both cluster and node components)
-kubectl get pods -n kube-system -l app=k8s-agent-test
+kubectl get pods -n kube-system -l app=k8s-agent
 
 # View cluster-level agent logs
-kubectl logs -f deployment/k8s-agent-test-cluster -n kube-system
+kubectl logs -f deployment/k8s-agent-cluster -n kube-system
 
 # View node-level agent logs (from any node)
-kubectl logs -f daemonset/k8s-agent-test-node -n kube-system
+kubectl logs -f daemonset/k8s-agent-node -n kube-system
 ```
 
 ## Configuration
@@ -50,7 +50,7 @@ kubectl logs -f daemonset/k8s-agent-test-node -n kube-system
 You can customize the deployment by overriding values:
 
 ```bash
-helm install k8s-agent-test ./charts/k8s-agent-test \
+helm install k8s-agent ./charts/k8s-agent \
   --set image.tag=v1.0.1 \
   --set components.cluster.replicaCount=2 \
   --set defaultComponents.enabled=true
@@ -59,12 +59,12 @@ helm install k8s-agent-test ./charts/k8s-agent-test \
 To disable specific components:
 ```bash
 # Only cluster-level collection
-helm install k8s-agent-test ./charts/k8s-agent-test \
+helm install k8s-agent ./charts/k8s-agent \
   --set defaultComponents.enabled=true \
   --set components.node.enabled=false
 
 # Only node-level collection
-helm install k8s-agent-test ./charts/k8s-agent-test \
+helm install k8s-agent ./charts/k8s-agent \
   --set defaultComponents.enabled=true \
   --set components.cluster.enabled=false
 ```
@@ -72,27 +72,31 @@ helm install k8s-agent-test ./charts/k8s-agent-test \
 Or create a custom `values.yaml` file:
 
 ```bash
-helm install k8s-agent-test ./charts/k8s-agent-test -f my-values.yaml
+helm install k8s-agent ./charts/k8s-agent -f my-values.yaml
 ```
 
 ## Upgrading
 
 ```bash
-helm upgrade k8s-agent-test ./charts/k8s-agent-test
+helm upgrade k8s-agent ./charts/k8s-agent
 ```
 
 Or with new values:
 
 ```bash
-helm upgrade k8s-agent-test ./charts/k8s-agent-test \
+helm upgrade k8s-agent ./charts/k8s-agent \
   --set image.tag=v1.0.1
 ```
 
 ## Uninstalling
 
 ```bash
-helm uninstall k8s-agent-test
+helm uninstall k8s-agent
 ```
+
+## Deploying on GKE
+
+The same chart works on GKE. Set `image.repository` to your GCR or Artifact Registry URL (e.g. `gcr.io/my-project/k8s-agent`). Use Auth0 for ingestion API auth as in Quick Start (`auth0.clientId`, `auth0.clientSecret`), and set `metricsExport.customerId` as needed (cluster ID is derived from the API).
 
 ## Troubleshooting
 
@@ -100,15 +104,15 @@ helm uninstall k8s-agent-test
 
 ```bash
 # Check pod events
-kubectl describe pod -n kube-system -l app=k8s-agent-test
+kubectl describe pod -n kube-system -l app=k8s-agent
 
 # Check RBAC permissions
-kubectl auth can-i list nodes --as=system:serviceaccount:kube-system:k8s-agent-test
+kubectl auth can-i list nodes --as=system:serviceaccount:kube-system:k8s-agent
 ```
 
 ### Image pull errors
 
 Ensure:
 - Image exists in the registry and is publicly accessible
-- Image reference in `values.yaml` is correct
+- Image reference in `values.yaml` is correct (default: `public.ecr.aws/b6q7g2c1/pump`)
 - Cluster has network access to pull from the registry

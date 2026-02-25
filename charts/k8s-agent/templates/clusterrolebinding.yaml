@@ -1,14 +1,14 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "k8s-agent-test.fullname" . }}
+  name: {{ include "k8s-agent.fullname" . }}
   labels:
-    {{- include "k8s-agent-test.labels" . | nindent 4 }}
+    {{- include "k8s-agent.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ include "k8s-agent-test.fullname" . }}
+  name: {{ include "k8s-agent.fullname" . }}
 subjects:
   - kind: ServiceAccount
-    name: {{ include "k8s-agent-test.serviceAccountName" . }}
+    name: {{ include "k8s-agent.serviceAccountName" . }}
     namespace: {{ .Values.namespace }}

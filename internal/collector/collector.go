@@ -67,8 +67,9 @@ type NodeMetrics struct {
 	Provider     string `json:"provider,omitempty"`      // aws, gcp, azure, or empty if unknown
 	InstanceType string `json:"instance_type,omitempty"` // e.g. m5.2xlarge, n2-standard-4
 	InstanceID   string `json:"instance_id,omitempty"`   // e.g. i-0abc123 (AWS), VM name (GCP/Azure)
-	Zone         string `json:"zone,omitempty"`          // availability zone, e.g. us-west-2a
-	Region       string `json:"region,omitempty"`       // e.g. us-west-2
+	Zone         string `json:"zone,omitempty"`         // availability zone, e.g. us-west-2a
+	Region       string `json:"region,omitempty"`        // e.g. us-west-2
+	ProjectID    string `json:"project_id,omitempty"`   // GCP project ID when applicable
 	Capacity       ResourceMetrics    `json:"capacity"`
 	Allocatable    ResourceMetrics    `json:"allocatable"`
 	Usage          ResourceMetrics    `json:"usage"`
@@ -416,6 +417,7 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID, custo
 			InstanceID:     instanceID,
 			Zone:           zone,
 			Region:         region,
+			ProjectID:      cloud.ProjectID(n.Spec.ProviderID),
 			Capacity:       resourceMetricsFromQuantities(capCPU, capMem),
 			Allocatable:    resourceMetricsFromQuantities(allocCPU, allocMem),
 			Usage:          resourceMetricsFromQuantities(zeroQ, zeroQ),

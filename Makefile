@@ -1,12 +1,12 @@
 .PHONY: build push deploy upgrade uninstall clean help package-chart publish-chart
 
 # Configuration
-IMAGE_NAME ?= k8s-agent-test
+IMAGE_NAME ?= k8s-agent
 IMAGE_TAG ?= latest
 REGISTRY ?= docker.io
 FULL_IMAGE ?= $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG)
-HELM_RELEASE_NAME ?= k8s-agent-test
-HELM_CHART_PATH ?= ./charts/k8s-agent-test
+HELM_RELEASE_NAME ?= k8s-agent
+HELM_CHART_PATH ?= ./charts/k8s-agent
 HELM_REPO_URL ?= https://pumpcard.github.io/k8s-agent
 CHART_VERSION ?= $(shell grep '^version:' $(HELM_CHART_PATH)/Chart.yaml | awk '{print $$2}')
 
@@ -56,7 +56,7 @@ clean: uninstall
 package-chart:
 	@echo "Packaging Helm chart..."
 	helm package $(HELM_CHART_PATH)
-	@echo "Chart packaged: k8s-agent-test-$(CHART_VERSION).tgz"
+	@echo "Chart packaged: k8s-agent-$(CHART_VERSION).tgz"
 
 # Publish chart to GitHub Pages
 # Requires: gh-pages branch and GitHub Pages enabled
@@ -68,7 +68,7 @@ publish-chart: package-chart
 	fi
 	helm repo index gh-pages --url $(HELM_REPO_URL) --merge gh-pages/index.yaml || \
 	helm repo index gh-pages --url $(HELM_REPO_URL)
-	cp k8s-agent-test-$(CHART_VERSION).tgz gh-pages/
+	cp k8s-agent-$(CHART_VERSION).tgz gh-pages/
 	cd gh-pages && \
 		git add . && \
 		git commit -m "Add chart version $(CHART_VERSION)" && \
@@ -76,7 +76,7 @@ publish-chart: package-chart
 	@echo "Chart published to $(HELM_REPO_URL)"
 	@echo "Users can now install with:"
 	@echo "  helm repo add your-repo $(HELM_REPO_URL)"
-	@echo "  helm install k8s-agent-test your-repo/k8s-agent-test"
+	@echo "  helm install k8s-agent your-repo/k8s-agent"
 
 # Help
 help:
@@ -91,12 +91,12 @@ help:
 	@echo "  status       - Check deployment status"
 	@echo ""
 	@echo "Configuration:"
-	@echo "  IMAGE_NAME        - Docker image name (default: k8s-agent-test)"
+	@echo "  IMAGE_NAME        - Docker image name (default: k8s-agent)"
 	@echo "  IMAGE_TAG         - Docker image tag (default: latest)"
 	@echo "  REGISTRY          - Container registry (default: docker.io)"
-	@echo "  HELM_RELEASE_NAME - Helm release name (default: k8s-agent-test)"
+	@echo "  HELM_RELEASE_NAME - Helm release name (default: k8s-agent)"
 	@echo ""
 	@echo "Examples:"
-	@echo "  make build IMAGE_NAME=pump/k8s-agent-test IMAGE_TAG=v1.0.0"
+	@echo "  make build IMAGE_NAME=pump/k8s-agent IMAGE_TAG=v1.0.0"
 	@echo "  make deploy"
 	@echo "  make upgrade"

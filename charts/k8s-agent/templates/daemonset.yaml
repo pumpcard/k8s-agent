@@ -2,23 +2,23 @@
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: {{ include "k8s-agent-test.fullname" . }}-node
+  name: {{ include "k8s-agent.fullname" . }}-node
   namespace: {{ .Values.namespace }}
   labels:
-    {{- include "k8s-agent-test.labels" . | nindent 4 }}
+    {{- include "k8s-agent.labels" . | nindent 4 }}
     component: node
 spec:
   selector:
     matchLabels:
-      {{- include "k8s-agent-test.selectorLabels" . | nindent 6 }}
+      {{- include "k8s-agent.selectorLabels" . | nindent 6 }}
       component: node
   template:
     metadata:
       labels:
-        {{- include "k8s-agent-test.selectorLabels" . | nindent 8 }}
+        {{- include "k8s-agent.selectorLabels" . | nindent 8 }}
         component: node
     spec:
-      serviceAccountName: {{ include "k8s-agent-test.serviceAccountName" . }}
+      serviceAccountName: {{ include "k8s-agent.serviceAccountName" . }}
       containers:
       - name: {{ .Chart.Name }}
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"

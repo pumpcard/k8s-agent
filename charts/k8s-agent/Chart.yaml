@@ -1,5 +1,5 @@
 apiVersion: v2
-name: k8s-agent-test
+name: k8s-agent
 description: A lightweight Kubernetes agent that collects cluster-level metrics
 type: application
 version: 1.0.0
@@ -10,4 +10,6 @@ keywords:
   - monitoring
   - agent
 maintainers:
-  - name: k8s-agent-test
+  - name: k8s-agent
+    email: support@pump.co
+    url: https://pump.co
