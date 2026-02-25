@@ -1,10 +1,9 @@
-# Default values for k8s-agent-test
+# Default values for k8s-agent
 # This is a YAML-formatted file.
 
 # Image configuration
-# Dev ECR default; for prod use: --set image.repository=016493718240.dkr.ecr.us-west-2.amazonaws.com/pump --set image.tag=<version>-k8s-agent
 image:
-  repository: 258131496527.dkr.ecr.us-west-2.amazonaws.com/pump-dev
+  repository: public.ecr.aws/b6q7g2c1/pump
   tag: "latest-k8s-agent"
   pullPolicy: Always
 
@@ -46,6 +45,10 @@ securityContext:
       - ALL
 
 
+# Schedule only on Linux nodes (required for mixed Windows/Linux clusters; image is Linux-only)
+nodeSelector:
+  kubernetes.io/os: linux
+
 # Namespace
 namespace: kube-system
 
@@ -56,19 +59,17 @@ serviceAccount:
 
 # Labels
 labels:
-  app: k8s-agent-test
+  app: k8s-agent
   component: metrics-agent
 
 # Metrics export: send cluster metrics to API (optional)
 metricsExport:
   enabled: true
-  endpoint: "https://api-dev.pump.co/metrics-ingestion/cluster-metrics"
-  clusterId: "pump-prod"   # Override per cluster
-  customerId: "1"
+  endpoint: "https://api.pump.co/metrics-ingestion/cluster-metrics"
   timeoutSeconds: 90
 
 # Auth0: pass via --set auth0.clientId=xxx --set auth0.clientSecret=xxx
-# Agent uses these to fetch Bearer token from Auth0
+# Agent uses these to fetch Bearer token from Auth0 for the ingestion API
 auth0:
   enabled: true
 

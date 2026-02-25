@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"k8s-agent/internal/clusterid"
 	"k8s-agent/internal/collector"
 	"k8s-agent/internal/exporter"
 
@@ -36,13 +37,17 @@ func main() {
 	}
 
 	exportCfg := exporter.ConfigFromEnv()
+	clusterID := clusterid.FromKubeSystem(context.Background(), client)
+	if clusterID == "" {
+		clusterID = "unknown"
+	}
 	exportClient := exporter.NewClient(exportCfg)
 
-	fmt.Fprintf(os.Stderr, "k8s-agent started (cluster=%s)\n", exportCfg.ClusterID)
+	fmt.Fprintf(os.Stderr, "k8s-agent started (cluster=%s)\n", clusterID)
 
 	for {
 		ctx := context.Background()
-		metrics := collector.Collect(ctx, client, exportCfg.ClusterID, exportCfg.CustomerID)
+		metrics := collector.Collect(ctx, client, clusterID, exportCfg.CustomerID)
 		jsonData, err := json.Marshal(metrics)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "marshal metrics: %v\n", err)
@@ -59,8 +64,8 @@ func main() {
 					n.Name, n.Provider, n.InstanceType, n.Zone, n.Region)
 			}
 			fmt.Fprintf(os.Stderr, "\n")
-			if err := exportClient.Export(exportCfg.Endpoint, exportCfg.ClusterID, exportCfg.CustomerID, jsonData); err != nil {
-				fmt.Fprintf(os.Stderr, "metrics export: %v\n", err)
+			if err := exportClient.Export(exportCfg.Endpoint, clusterID, exportCfg.CustomerID, jsonData); err != nil {
+				fmt.Fprintf(os.Stderr, "metrics export failed: %v\n", err)
 			} else {
 				fmt.Fprintf(os.Stderr, "metrics export ok\n")
 			}

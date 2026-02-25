@@ -2,24 +2,28 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "k8s-agent-test.fullname" . }}-cluster
+  name: {{ include "k8s-agent.fullname" . }}-cluster
   namespace: {{ .Values.namespace }}
   labels:
-    {{- include "k8s-agent-test.labels" . | nindent 4 }}
+    {{- include "k8s-agent.labels" . | nindent 4 }}
     component: cluster
 spec:
   replicas: {{ .Values.components.cluster.replicaCount | default 1 }}
   selector:
     matchLabels:
-      {{- include "k8s-agent-test.selectorLabels" . | nindent 6 }}
+      {{- include "k8s-agent.selectorLabels" . | nindent 6 }}
       component: cluster
   template:
     metadata:
       labels:
-        {{- include "k8s-agent-test.selectorLabels" . | nindent 8 }}
+        {{- include "k8s-agent.selectorLabels" . | nindent 8 }}
         component: cluster
     spec:
-      serviceAccountName: {{ include "k8s-agent-test.serviceAccountName" . }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "k8s-agent.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -37,8 +41,6 @@ spec:
         {{- if and (hasKey .Values "metricsExport") .Values.metricsExport.enabled }}
         - name: METRICS_EXPORT_ENDPOINT
           value: {{ .Values.metricsExport.endpoint | quote }}
-        - name: CLUSTER_ID
-          value: {{ .Values.metricsExport.clusterId | quote }}
         - name: CUSTOMER_ID
           value: {{ .Values.metricsExport.customerId | quote }}
         - name: METRICS_EXPORT_TIMEOUT_SECONDS

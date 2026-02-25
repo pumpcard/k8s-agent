@@ -29,3 +29,8 @@ func (Provider) Parse(providerID string) (instanceID, zone string) {
 	}
 	return "", ""
 }
+
+// ProjectID returns empty string; AWS providerID does not include project.
+func (Provider) ProjectID(providerID string) string {
+	return ""
+}
