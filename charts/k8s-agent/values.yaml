@@ -45,6 +45,10 @@ securityContext:
       - ALL
 
 
+# Schedule only on Linux nodes (required for mixed Windows/Linux clusters; image is Linux-only)
+nodeSelector:
+  kubernetes.io/os: linux
+
 # Namespace
 namespace: kube-system
 
