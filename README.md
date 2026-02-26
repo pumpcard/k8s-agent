@@ -16,7 +16,7 @@ When your backend requires a valid JWT, pass your `client_id` and `client_secret
 
 ```bash
 helm upgrade --install k8s-agent ./charts/k8s-agent \
-  --namespace kube-system --create-namespace \
+  --namespace k8s-agent --create-namespace \
   --set defaultComponents.enabled=true \
   --set auth0.clientId="YOUR_CLIENT_ID" \
   --set auth0.clientSecret="YOUR_CLIENT_SECRET"
@@ -26,23 +26,20 @@ This installs both:
 - **Cluster-level agent** (Deployment) - collects cluster-wide metrics from the Kubernetes API
 - **Node-level agent** (DaemonSet) - one pod per node for node-specific metrics and host-level data
 
-### Install from Local Chart
-
-```bash
-helm install k8s-agent ./charts/k8s-agent
-```
 
 ### Verify Deployment
 
+Use the same namespace you passed to `helm install --namespace` (e.g. `k8s-agent`):
+
 ```bash
 # Check pod status (both cluster and node components)
-kubectl get pods -n kube-system -l app=k8s-agent
+kubectl get pods -n k8s-agent -l app=k8s-agent
 
 # View cluster-level agent logs
-kubectl logs -f deployment/k8s-agent-cluster -n kube-system
+kubectl logs -f deployment/k8s-agent-cluster -n k8s-agent
 
 # View node-level agent logs (from any node)
-kubectl logs -f daemonset/k8s-agent-node -n kube-system
+kubectl logs -f daemonset/k8s-agent-node -n k8s-agent
 ```
 
 ## Configuration
@@ -50,7 +47,7 @@ kubectl logs -f daemonset/k8s-agent-node -n kube-system
 You can customize the deployment by overriding values:
 
 ```bash
-helm install k8s-agent ./charts/k8s-agent \
+helm install k8s-agent ./charts/k8s-agent --namespace k8s-agent --create-namespace \
   --set image.tag=v1.0.1 \
   --set components.cluster.replicaCount=2 \
   --set defaultComponents.enabled=true
@@ -59,12 +56,12 @@ helm install k8s-agent ./charts/k8s-agent \
 To disable specific components:
 ```bash
 # Only cluster-level collection
-helm install k8s-agent ./charts/k8s-agent \
+helm install k8s-agent ./charts/k8s-agent --namespace k8s-agent --create-namespace \
   --set defaultComponents.enabled=true \
   --set components.node.enabled=false
 
 # Only node-level collection
-helm install k8s-agent ./charts/k8s-agent \
+helm install k8s-agent ./charts/k8s-agent --namespace k8s-agent --create-namespace \
   --set defaultComponents.enabled=true \
   --set components.cluster.enabled=false
 ```
@@ -72,26 +69,28 @@ helm install k8s-agent ./charts/k8s-agent \
 Or create a custom `values.yaml` file:
 
 ```bash
-helm install k8s-agent ./charts/k8s-agent -f my-values.yaml
+helm install k8s-agent ./charts/k8s-agent --namespace k8s-agent --create-namespace -f my-values.yaml
 ```
 
 ## Upgrading
 
+Use the same namespace you used for install:
+
 ```bash
-helm upgrade k8s-agent ./charts/k8s-agent
+helm upgrade k8s-agent ./charts/k8s-agent --namespace k8s-agent
 ```
 
 Or with new values:
 
 ```bash
-helm upgrade k8s-agent ./charts/k8s-agent \
+helm upgrade k8s-agent ./charts/k8s-agent --namespace k8s-agent \
   --set image.tag=v1.0.1
 ```
 
 ## Uninstalling
 
 ```bash
-helm uninstall k8s-agent
+helm uninstall k8s-agent --namespace k8s-agent
 ```
 
 ## Deploying on GKE
@@ -102,12 +101,14 @@ The same chart works on GKE. Set `image.repository` to your GCR or Artifact Regi
 
 ### Pod not starting
 
+Use the namespace where you installed the agent (e.g. `k8s-agent`):
+
 ```bash
 # Check pod events
-kubectl describe pod -n kube-system -l app=k8s-agent
+kubectl describe pod -n k8s-agent -l app=k8s-agent
 
 # Check RBAC permissions
-kubectl auth can-i list nodes --as=system:serviceaccount:kube-system:k8s-agent
+kubectl auth can-i list nodes --as=system:serviceaccount:k8s-agent:k8s-agent
 ```
 
 ### Image pull errors

@@ -49,9 +49,6 @@ securityContext:
 nodeSelector:
   kubernetes.io/os: linux
 
-# Namespace
-namespace: kube-system
-
 # ServiceAccount
 serviceAccount:
   create: true
