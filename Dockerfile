@@ -4,6 +4,7 @@ ARG TARGETARCH
 
 # Runtime stage
 FROM alpine:latest
+ARG TARGETARCH
 
 # Install ca-certificates for HTTPS and create non-root user
 RUN apk --no-cache add ca-certificates tzdata && \
