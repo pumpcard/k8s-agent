@@ -1,46 +1,23 @@
-# Build stage
-FROM golang:1.21-alpine AS builder
-
-# Build arguments for multi-architecture support
-ARG TARGETOS=linux
+# Multi-arch image: expects pre-built binaries k8s-agent-amd64 and k8s-agent-arm64
+# in the build context (built natively in CI to avoid slow QEMU emulation).
 ARG TARGETARCH
 
-# Install build dependencies
-RUN apk add --no-cache git
-
-# Set working directory
-WORKDIR /app
-
-# Copy go mod files
-COPY go.mod go.sum ./
-
-# Download dependencies
-RUN go mod download && go mod verify
-
-# Copy source code
-COPY . .
-
-# Build the application (TARGETOS/TARGETARCH set by buildx for multi-arch)
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -a -installsuffix cgo -ldflags="-w -s" -o k8s-agent ./cmd/k8s-agent
-
-# Runtime stage (platform-specific alpine chosen by buildx per arch)
+# Runtime stage
 FROM alpine:latest
 
-# Install ca-certificates for HTTPS requests and create non-root user with numeric UID
+# Install ca-certificates for HTTPS and create non-root user
 RUN apk --no-cache add ca-certificates tzdata && \
     addgroup -S -g 1000 k8s-agent && \
     adduser -S -u 1000 -G k8s-agent k8s-agent
 
 WORKDIR /app
 
-# Copy the binary from builder
-COPY --from=builder /app/k8s-agent .
+# Copy both binaries from context, then keep only the one for this arch (set by buildx)
+COPY k8s-agent-amd64 k8s-agent-arm64 /build/
+RUN cp /build/k8s-agent-${TARGETARCH} /app/k8s-agent && \
+    rm -rf /build && \
+    chmod 755 /app/k8s-agent
 
-# Change ownership to allow any user to run the binary
-RUN chmod 755 /app/k8s-agent
-
-# Switch to non-root user (service-specific user for better observability)
 USER 65532:65532
 
-# Run the application
 CMD ["./k8s-agent"]

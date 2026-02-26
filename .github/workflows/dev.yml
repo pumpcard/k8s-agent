@@ -33,6 +33,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+
+      - name: Build Go binaries (native, no QEMU)
+        run: |
+          go mod download
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o k8s-agent-amd64 ./cmd/k8s-agent
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-w -s" -o k8s-agent-arm64 ./cmd/k8s-agent
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
