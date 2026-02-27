@@ -14,6 +14,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
 const (
@@ -35,6 +36,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "kubernetes client: %v\n", err)
 		os.Exit(1)
 	}
+	var metricsClient *metricsclient.Clientset
+	if mc, err := metricsclient.NewForConfig(cfg); err == nil {
+		metricsClient = mc
+	}
+	// metricsClient may be nil if metrics-server is not installed; usage will be 0
 
 	exportCfg := exporter.ConfigFromEnv()
 	clusterID := clusterid.FromKubeSystem(context.Background(), client)
@@ -47,13 +53,17 @@ func main() {
 
 	for {
 		ctx := context.Background()
-		metrics := collector.Collect(ctx, client, clusterID, exportCfg.CustomerID)
+		metrics := collector.Collect(ctx, client, clusterID, exportCfg.CustomerID, metricsClient)
 		jsonData, err := json.Marshal(metrics)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "marshal metrics: %v\n", err)
 			time.Sleep(collectionInterval)
 			continue
 		}
+
+		// Log full payload (pretty) so ingestion/DB issues can be debugged from pod logs
+		payloadPretty, _ := json.MarshalIndent(metrics, "", "  ")
+		fmt.Fprintf(os.Stderr, "payload:\n%s\n", payloadPretty)
 
 		if exportCfg.Enabled {
 			nodeCount := len(metrics.Nodes)
