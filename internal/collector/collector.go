@@ -459,10 +459,10 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID, custo
 			}
 			var cpuPercent, memoryPercent float64
 			if requestedCPUMillicores > 0 {
-				cpuPercent = capPercent(100 * float64(usage.cpuMilli) / float64(requestedCPUMillicores))
+				cpuPercent = 100 * float64(usage.cpuMilli) / float64(requestedCPUMillicores)
 			}
 			if requestedMemoryBytes > 0 {
-				memoryPercent = capPercent(100 * float64(usage.memBytes) / float64(requestedMemoryBytes))
+				memoryPercent = 100 * float64(usage.memBytes) / float64(requestedMemoryBytes)
 			}
 			podSummary.Utilization = &UtilizationMetrics{CPUPercent: cpuPercent, MemoryPercent: memoryPercent, Status: "unknown"}
 		}
@@ -633,13 +633,6 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID, custo
 			"pods_total", payload.Summary.TotalPods,
 			"running", payload.Summary.RunningPods))
 	return payload
-}
-
-func capPercent(v float64) float64 {
-	if v > 100 {
-		return 100
-	}
-	return v
 }
 
 func sumContainerRequestsLimits(containers []corev1.Container, useLimits bool) (cpuMillicores, memoryBytes int64) {
