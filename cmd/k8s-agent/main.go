@@ -40,7 +40,6 @@ func main() {
 	if mc, err := metricsclient.NewForConfig(cfg); err == nil {
 		metricsClient = mc
 	}
-	// metricsClient may be nil if metrics-server is not installed; usage will be 0
 
 	exportCfg := exporter.ConfigFromEnv()
 	clusterID := clusterid.FromKubeSystem(context.Background(), client)
@@ -61,19 +60,15 @@ func main() {
 			continue
 		}
 
-		// Log full payload (pretty) so ingestion/DB issues can be debugged from pod logs
-		payloadPretty, _ := json.MarshalIndent(metrics, "", "  ")
-		fmt.Fprintf(os.Stderr, "payload:\n%s\n", payloadPretty)
+		nodeCount := len(metrics.Nodes)
+		totalPods := 0
+		for i := range metrics.Nodes {
+			totalPods += len(metrics.Nodes[i].Pods)
+		}
+		fmt.Fprintf(os.Stderr, "payload: %d bytes, %d nodes, %d pods\n", len(jsonData), nodeCount, totalPods)
 
 		if exportCfg.Enabled {
-			nodeCount := len(metrics.Nodes)
-			fmt.Fprintf(os.Stderr, "sending payload: %d bytes, %d nodes", len(jsonData), nodeCount)
-			if nodeCount > 0 {
-				n := &metrics.Nodes[0]
-				fmt.Fprintf(os.Stderr, " | first node: name=%s provider=%s instance_type=%s zone=%s region=%s",
-					n.Name, n.Provider, n.InstanceType, n.Zone, n.Region)
-			}
-			fmt.Fprintf(os.Stderr, "\n")
+			fmt.Fprintf(os.Stderr, "sending to %s\n", exportCfg.Endpoint)
 			if err := exportClient.Export(exportCfg.Endpoint, clusterID, exportCfg.CustomerID, jsonData); err != nil {
 				fmt.Fprintf(os.Stderr, "metrics export failed: %v\n", err)
 			} else {
