@@ -8,6 +8,7 @@ import (
 	_ "k8s-agent/internal/cloud/aws"
 	_ "k8s-agent/internal/cloud/azure"
 	_ "k8s-agent/internal/cloud/gcp"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -59,24 +60,30 @@ type NodeCondition struct {
 }
 
 type NodeMetrics struct {
-	Name           string             `json:"name"`
-	Architecture   string             `json:"architecture"`
-	KubeletVersion string             `json:"kubelet_version"`
-	OSImage        string             `json:"os_image"`
+	Name           string `json:"name"`
+	Architecture   string `json:"architecture"`
+	KubeletVersion string `json:"kubelet_version"`
+	OSImage        string `json:"os_image"`
 	// Cloud provider fields for cost/RI/SP correlation (from labels and providerID)
-	Provider     string `json:"provider,omitempty"`      // aws, gcp, azure, or empty if unknown
-	InstanceType string `json:"instance_type,omitempty"` // e.g. m5.2xlarge, n2-standard-4
-	InstanceID   string `json:"instance_id,omitempty"`   // e.g. i-0abc123 (AWS), VM name (GCP/Azure)
-	Zone         string `json:"zone,omitempty"`         // availability zone, e.g. us-west-2a
-	Region       string `json:"region,omitempty"`        // e.g. us-west-2
-	ProjectID    string `json:"project_id,omitempty"`   // GCP project ID when applicable
-	Capacity       ResourceMetrics    `json:"capacity"`
-	Allocatable    ResourceMetrics    `json:"allocatable"`
-	Usage          ResourceMetrics    `json:"usage"`
-	Utilization    UtilizationMetrics `json:"utilization"`
-	Health         NodeHealth         `json:"health"`
-	Conditions     []NodeCondition    `json:"conditions"`
-	Pods           []PodSummary       `json:"pods"`
+	Provider                        string             `json:"provider,omitempty"`      // aws, gcp, azure, or empty if unknown
+	InstanceType                    string             `json:"instance_type,omitempty"` // e.g. m5.2xlarge, n2-standard-4
+	InstanceID                      string             `json:"instance_id,omitempty"`   // e.g. i-0abc123 (AWS), VM name (GCP/Azure)
+	Zone                            string             `json:"zone,omitempty"`          // availability zone, e.g. us-west-2a
+	Region                          string             `json:"region,omitempty"`        // e.g. us-west-2
+	ProjectID                       string             `json:"project_id,omitempty"`    // GCP project ID when applicable
+	Capacity                        ResourceMetrics    `json:"capacity"`
+	Allocatable                     ResourceMetrics    `json:"allocatable"`
+	Usage                           ResourceMetrics    `json:"usage"`
+	K8sNodeCPUCapacityMillicores    int64              `json:"k8s_node_cpu_capacity_millicores"`
+	K8sNodeMemoryCapacityBytes      int64              `json:"k8s_node_memory_capacity_bytes"`
+	K8sNodeCPUAllocatableMillicores int64              `json:"k8s_node_cpu_allocatable_millicores"`
+	K8sNodeMemoryAllocatableBytes   int64              `json:"k8s_node_memory_allocatable_bytes"`
+	K8sNodeCPUUsageMillicores       int64              `json:"k8s_node_cpu_usage_millicores"`
+	K8sNodeMemoryUsageBytes         int64              `json:"k8s_node_memory_usage_bytes"`
+	Utilization                     UtilizationMetrics `json:"utilization"`
+	Health                          NodeHealth         `json:"health"`
+	Conditions                      []NodeCondition    `json:"conditions"`
+	Pods                            []PodSummary       `json:"pods"`
 }
 
 // UtilizationMetrics status: healthy | warning | critical | unknown
@@ -408,19 +415,25 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID, custo
 			nodePods = []PodSummary{}
 		}
 		nodeList = append(nodeList, NodeMetrics{
-			Name:           n.Name,
-			Architecture:   ni.Architecture,
-			KubeletVersion: ni.KubeletVersion,
-			OSImage:        ni.OSImage,
-			Provider:       provider,
-			InstanceType:   instanceType,
-			InstanceID:     instanceID,
-			Zone:           zone,
-			Region:         region,
-			ProjectID:      cloud.ProjectID(n.Spec.ProviderID),
-			Capacity:       resourceMetricsFromQuantities(capCPU, capMem),
-			Allocatable:    resourceMetricsFromQuantities(allocCPU, allocMem),
-			Usage:          resourceMetricsFromQuantities(zeroQ, zeroQ),
+			Name:                            n.Name,
+			Architecture:                    ni.Architecture,
+			KubeletVersion:                  ni.KubeletVersion,
+			OSImage:                         ni.OSImage,
+			Provider:                        provider,
+			InstanceType:                    instanceType,
+			InstanceID:                      instanceID,
+			Zone:                            zone,
+			Region:                          region,
+			ProjectID:                       cloud.ProjectID(n.Spec.ProviderID),
+			Capacity:                        resourceMetricsFromQuantities(capCPU, capMem),
+			Allocatable:                     resourceMetricsFromQuantities(allocCPU, allocMem),
+			Usage:                           resourceMetricsFromQuantities(zeroQ, zeroQ),
+			K8sNodeCPUCapacityMillicores:    quantityToMilli(capCPU),
+			K8sNodeMemoryCapacityBytes:      quantityToBytes(capMem),
+			K8sNodeCPUAllocatableMillicores: quantityToMilli(allocCPU),
+			K8sNodeMemoryAllocatableBytes:   quantityToBytes(allocMem),
+			K8sNodeCPUUsageMillicores:       0,
+			K8sNodeMemoryUsageBytes:         0,
 			Utilization: UtilizationMetrics{
 				CPUPercent:    0,
 				MemoryPercent: 0,
