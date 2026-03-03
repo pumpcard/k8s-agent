@@ -18,7 +18,7 @@ import (
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
-var collectorLog = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+var collectorLog = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 type ClusterMetricsPayload struct {
 	Timestamp      string         `json:"timestamp"`
