@@ -41,8 +41,6 @@ spec:
         {{- if and (hasKey .Values "metricsExport") .Values.metricsExport.enabled }}
         - name: METRICS_EXPORT_ENDPOINT
           value: {{ .Values.metricsExport.endpoint | quote }}
-        - name: CUSTOMER_ID
-          value: {{ .Values.metricsExport.customerId | quote }}
         - name: METRICS_EXPORT_TIMEOUT_SECONDS
           value: {{ .Values.metricsExport.timeoutSeconds | default 90 | toString | quote }}
         {{- end }}

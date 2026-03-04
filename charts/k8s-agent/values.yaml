@@ -8,19 +8,13 @@ image:
   pullPolicy: Always
 
 # Component configuration
-# Cluster-level component collects all metrics (node and pod level granularity)
 defaultComponents:
   enabled: true
 
-# Cluster-level component (Deployment - collects cluster-wide metrics with full granularity)
 components:
   cluster:
     enabled: true
     replicaCount: 1
-  
-  # Node-level component (DaemonSet - disabled by default, redundant with cluster component)
-  node:
-    enabled: false
 
 # Resource limits and requests
 resources:
