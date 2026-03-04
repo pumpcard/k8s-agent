@@ -18,7 +18,7 @@ import (
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
-var collectorLog = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+var collectorLog = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 type ClusterMetricsPayload struct {
 	Timestamp      string         `json:"timestamp"`
@@ -323,7 +323,7 @@ func isSystemNamespace(ns string) bool {
 	return systemNamespaces[ns]
 }
 
-func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID, customerID string, metricsClient *metricsclient.Clientset) ClusterMetricsPayload {
+func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string, metricsClient *metricsclient.Clientset) ClusterMetricsPayload {
 	ts := time.Now().UTC().Format(time.RFC3339)
 	empty := ClusterMetricsPayload{
 		Timestamp:      ts,
@@ -332,7 +332,7 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID, custo
 		Nodes:          []NodeMetrics{},
 	}
 
-	collectorLog.Debug("collect_start", "cluster_id", clusterID, "customer_id", customerID)
+	collectorLog.Debug("collect_start", "cluster_id", clusterID)
 
 	nodes, err := client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -603,7 +603,6 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID, custo
 	}
 
 	_ = clusterID
-	_ = customerID
 
 	payload := ClusterMetricsPayload{
 		Timestamp:      ts,

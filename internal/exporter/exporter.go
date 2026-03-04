@@ -17,11 +17,10 @@ const defaultTimeout = 90 * time.Second
 
 // Config holds export destination, identity (cluster/customer), and timeout.
 type Config struct {
-	Endpoint   string
-	Enabled    bool
-	CustomerID string
-	Timeout    time.Duration
-	Auth       *auth.TokenProvider // nil when auth not configured
+	Endpoint string
+	Enabled  bool
+	Timeout  time.Duration
+	Auth     *auth.TokenProvider // nil when auth not configured
 }
 
 // ConfigFromEnv builds config from environment variables.
@@ -35,10 +34,6 @@ func ConfigFromEnv() Config {
 	if v := os.Getenv("METRICS_EXPORT_ENABLED"); v == "false" || v == "0" {
 		enabled = false
 	}
-	customerID := os.Getenv("CUSTOMER_ID")
-	if customerID == "" {
-		customerID = "1"
-	}
 	timeout := defaultTimeout
 	if s := os.Getenv("METRICS_EXPORT_TIMEOUT_SECONDS"); s != "" {
 		if n, err := strconv.Atoi(s); err == nil && n > 0 {
@@ -46,10 +41,9 @@ func ConfigFromEnv() Config {
 		}
 	}
 	cfg := Config{
-		Endpoint:   endpoint,
-		Enabled:    enabled,
-		CustomerID: customerID,
-		Timeout:    timeout,
+		Endpoint: endpoint,
+		Enabled:  enabled,
+		Timeout:  timeout,
 	}
 	if authCfg := auth.ConfigFromEnv(); authCfg != nil {
 		cfg.Auth = auth.NewTokenProvider(*authCfg)
@@ -73,14 +67,13 @@ func NewClient(cfg Config) *Client {
 	}
 }
 
-func (c *Client) Export(endpoint, clusterID, customerID string, body []byte) error {
+func (c *Client) Export(endpoint, clusterID string, body []byte) error {
 	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Cluster-Id", clusterID)
-	req.Header.Set("X-Customer-Id", customerID)
 	if c.auth != nil {
 		token, err := c.auth.GetToken()
 		if err != nil {
@@ -96,7 +89,7 @@ func (c *Client) Export(endpoint, clusterID, customerID string, body []byte) err
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
 		if len(body) > 0 {
 			return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, bytes.TrimSpace(body))
 		}
