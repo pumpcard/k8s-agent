@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"log/slog"
 	"os"
 	"time"
 
@@ -18,22 +18,23 @@ import (
 )
 
 const (
-	collectionInterval = 15 * time.Minute
+	collectionInterval = 1 * time.Hour
 )
 
 func main() {
+	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
 	cfg, err := rest.InClusterConfig()
 	if err != nil {
-		// Fall back to local kubeconfig for dev (e.g. KUBECONFIG or ~/.kube/config)
 		cfg, err = clientcmd.BuildConfigFromFlags("", os.Getenv("KUBECONFIG"))
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "kubernetes config: %v\n", err)
+			log.Error("kubernetes config", "error", err)
 			os.Exit(1)
 		}
 	}
 	client, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "kubernetes client: %v\n", err)
+		log.Error("kubernetes client", "error", err)
 		os.Exit(1)
 	}
 	var metricsClient *metricsclient.Clientset
@@ -48,14 +49,14 @@ func main() {
 	}
 	exportClient := exporter.NewClient(exportCfg)
 
-	fmt.Fprintf(os.Stderr, "k8s-agent started (cluster=%s)\n", clusterID)
+	log.Info("k8s-agent started", "cluster", clusterID)
 
 	for {
 		ctx := context.Background()
-		metrics := collector.Collect(ctx, client, clusterID, exportCfg.CustomerID, metricsClient)
+		metrics := collector.Collect(ctx, client, clusterID, metricsClient)
 		jsonData, err := json.Marshal(metrics)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "marshal metrics: %v\n", err)
+			log.Error("marshal metrics", "error", err)
 			time.Sleep(collectionInterval)
 			continue
 		}
@@ -65,14 +66,14 @@ func main() {
 		for i := range metrics.Nodes {
 			totalPods += len(metrics.Nodes[i].Pods)
 		}
-		fmt.Fprintf(os.Stderr, "payload: %d bytes, %d nodes, %d pods\n", len(jsonData), nodeCount, totalPods)
+		log.Info("payload", "bytes", len(jsonData), "nodes", nodeCount, "pods", totalPods)
 
 		if exportCfg.Enabled {
-			fmt.Fprintf(os.Stderr, "sending to %s\n", exportCfg.Endpoint)
-			if err := exportClient.Export(exportCfg.Endpoint, clusterID, exportCfg.CustomerID, jsonData); err != nil {
-				fmt.Fprintf(os.Stderr, "metrics export failed: %v\n", err)
+			log.Info("exporting", "endpoint", exportCfg.Endpoint)
+			if err := exportClient.Export(exportCfg.Endpoint, clusterID, jsonData); err != nil {
+				log.Error("metrics export failed", "error", err)
 			} else {
-				fmt.Fprintf(os.Stderr, "metrics export ok\n")
+				log.Info("metrics export ok")
 			}
 		}
 
