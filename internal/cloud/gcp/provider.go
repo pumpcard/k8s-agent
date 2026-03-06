@@ -39,3 +39,8 @@ func (Provider) ProjectID(providerID string) string {
 	}
 	return ""
 }
+
+// AccountID returns the GCP project ID (used as account identifier for GCP).
+func (p Provider) AccountID(providerID string) string {
+	return p.ProjectID(providerID)
+}

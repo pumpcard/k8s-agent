@@ -33,3 +33,16 @@ func (Provider) Parse(providerID string) (instanceID, zone string) {
 func (Provider) ProjectID(providerID string) string {
 	return ""
 }
+
+// AccountID extracts the Azure subscription ID from providerID.
+// Format: azure:///subscriptions/<subscription-id>/resourceGroups/...
+func (Provider) AccountID(providerID string) string {
+	trimmed := strings.TrimPrefix(providerID, "azure:///")
+	parts := strings.Split(trimmed, "/")
+	for i, p := range parts {
+		if strings.EqualFold(p, "subscriptions") && i+1 < len(parts) {
+			return parts[i+1]
+		}
+	}
+	return ""
+}
