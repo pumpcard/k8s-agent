@@ -2,7 +2,7 @@ package cloud
 
 import "strings"
 
-// Provider parses cloud providerID to extract instance ID, zone, and optionally project ID.
+// Provider parses cloud providerID to extract instance ID, zone, and optionally project/account ID.
 // Each cloud (AWS, GCP, Azure) implements this interface.
 type Provider interface {
 	Name() string
@@ -10,6 +10,8 @@ type Provider interface {
 	Parse(providerID string) (instanceID, zone string)
 	// ProjectID returns the cloud project ID when applicable (e.g. GCP). Empty for AWS/Azure.
 	ProjectID(providerID string) string
+	// AccountID returns the cloud account identifier: AWS account ID (if available), GCP project ID, or Azure subscription ID.
+	AccountID(providerID string) string
 }
 
 // Registry holds cloud providers by prefix. Thread-safe for reads after init.
@@ -42,6 +44,20 @@ func ProjectID(providerID string) string {
 	for prefix, p := range registry {
 		if strings.HasPrefix(providerID, prefix) {
 			return p.ProjectID(providerID)
+		}
+	}
+	return ""
+}
+
+// AccountID returns the cloud account identifier for the given providerID:
+// AWS account ID (empty from providerID; may be set via node labels), GCP project ID, or Azure subscription ID.
+func AccountID(providerID string) string {
+	if providerID == "" {
+		return ""
+	}
+	for prefix, p := range registry {
+		if strings.HasPrefix(providerID, prefix) {
+			return p.AccountID(providerID)
 		}
 	}
 	return ""

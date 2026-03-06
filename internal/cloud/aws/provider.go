@@ -34,3 +34,9 @@ func (Provider) Parse(providerID string) (instanceID, zone string) {
 func (Provider) ProjectID(providerID string) string {
 	return ""
 }
+
+// AccountID returns empty string; AWS providerID does not include account ID.
+// Account ID can be set via node labels (e.g. custom label) or obtained from instance metadata.
+func (Provider) AccountID(providerID string) string {
+	return ""
+}

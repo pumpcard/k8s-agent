@@ -21,11 +21,13 @@ import (
 var collectorLog = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 type ClusterMetricsPayload struct {
+	ClusterID      string         `json:"cluster_id"`
 	Timestamp      string         `json:"timestamp"`
 	CollectionMode string         `json:"collection_mode"`
 	ClusterHealth  *ClusterHealth `json:"cluster_health"`
 	Summary        ClusterSummary `json:"summary"`
 	Nodes          []NodeMetrics  `json:"nodes"`
+	AccountID      string         `json:"account_id"` // Cloud account ID (AWS account, GCP project, or Azure subscription)
 }
 
 type ClusterHealth struct {
@@ -190,6 +192,19 @@ func nodeCloudInfo(node *corev1.Node) (provider, instanceType, instanceID, zone,
 		region = cloud.ZoneToRegion(zone)
 	}
 	return provider, instanceType, instanceID, zone, region
+}
+
+// nodeAccountID returns the cloud account ID for a node (used to derive the cluster account_id).
+// From providerID: GCP project, Azure subscription. For AWS, uses node label pump.co/account-id when set.
+func nodeAccountID(node *corev1.Node) string {
+	accountID := cloud.AccountID(node.Spec.ProviderID)
+	if accountID != "" {
+		return accountID
+	}
+	if node.Labels != nil && node.Labels["pump.co/account-id"] != "" {
+		return node.Labels["pump.co/account-id"]
+	}
+	return ""
 }
 
 func nodeConditionsFromK8s(conditions []corev1.NodeCondition) []NodeCondition {
@@ -530,6 +545,14 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string
 		"avg_cpu_utilization_percent", avgCPUUtilizationPercent,
 		"avg_memory_utilization_percent", avgMemoryUtilizationPercent)
 
+	clusterAccountID := ""
+	for _, node := range nodes.Items {
+		if id := nodeAccountID(&node); id != "" {
+			clusterAccountID = id
+			break
+		}
+	}
+
 	nodeList := make([]NodeMetrics, 0, len(nodes.Items))
 	for _, node := range nodes.Items {
 		capacity := node.Status.Capacity
@@ -602,9 +625,8 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string
 		})
 	}
 
-	_ = clusterID
-
 	payload := ClusterMetricsPayload{
+		ClusterID:      clusterID,
 		Timestamp:      ts,
 		CollectionMode: "cluster",
 		ClusterHealth:  clusterHealth,
@@ -615,7 +637,8 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string
 			FailedPods:    failed,
 			SucceededPods: succeeded,
 		},
-		Nodes: nodeList,
+		Nodes:     nodeList,
+		AccountID: clusterAccountID,
 	}
 	for _, node := range payload.Nodes {
 		collectorLog.Debug("payload_node",
