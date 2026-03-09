@@ -1,6 +1,9 @@
 # Default values for k8s-agent
 # This is a YAML-formatted file.
 
+# Log level: debug | info | warn | error (default: info). Use debug to get payload identity/preview in logs for troubleshooting.
+logLevel: info
+
 # Image configuration
 image:
   repository: public.ecr.aws/b6q7g2c1/pump

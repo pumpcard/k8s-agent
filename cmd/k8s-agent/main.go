@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"k8s-agent/internal/clusterid"
@@ -19,10 +20,31 @@ import (
 
 const (
 	collectionInterval = 1 * time.Hour
+	payloadPreviewLen  = 1000 // max chars of request body in debug logs (shows cluster_id..start of nodes; account_id is logged separately)
 )
 
+func truncateForLog(s string, maxLen int) string {
+	if maxLen <= 0 || len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "...[truncated]"
+}
+
 func main() {
-	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logLevel := slog.LevelInfo
+	if s := strings.TrimSpace(strings.ToLower(os.Getenv("LOG_LEVEL"))); s != "" {
+		switch s {
+		case "debug":
+			logLevel = slog.LevelDebug
+		case "info":
+			logLevel = slog.LevelInfo
+		case "warn", "warning":
+			logLevel = slog.LevelWarn
+		case "error":
+			logLevel = slog.LevelError
+		}
+	}
+	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel}))
 
 	cfg, err := rest.InClusterConfig()
 	if err != nil {
@@ -69,6 +91,12 @@ func main() {
 		log.Info("payload", "bytes", len(jsonData), "nodes", nodeCount, "pods", totalPods)
 
 		if exportCfg.Enabled {
+			// Debug-only: payload identity and preview for troubleshooting (enable with LOG_LEVEL=debug)
+			log.Debug("export payload",
+				"cluster_id", metrics.ClusterID,
+				"account_id", metrics.AccountID,
+				"payload_bytes", len(jsonData),
+				"payload_preview", truncateForLog(string(jsonData), payloadPreviewLen))
 			log.Info("exporting", "endpoint", exportCfg.Endpoint)
 			if err := exportClient.Export(exportCfg.Endpoint, clusterID, jsonData); err != nil {
 				log.Error("metrics export failed", "error", err)
