@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"strings"
 
-	"k8s-agent/internal/cloud/aws"
 	"k8s-agent/internal/collector"
 	"k8s-agent/internal/pump"
 
@@ -47,21 +46,10 @@ func truncateForLog(s string, maxLen int) string {
 	return s[:maxLen] + "...[truncated]"
 }
 
-// GetExportIDs returns cluster_id and account_id for the export body (trimmed; account_id
-// filled from AWS STS when empty and cluster has AWS nodes).
+// GetExportIDs returns cluster_id and account_id for the export body (trimmed).
+// account_id comes only from the collector (node providerID or labels, e.g. pump.co/account-id on EKS).
 func GetExportIDs(ctx context.Context, metrics collector.ClusterMetricsPayload) (clusterIDBody, accountIDBody string) {
-	clusterIDBody = strings.TrimSpace(metrics.ClusterID)
-	accountIDBody = strings.TrimSpace(metrics.AccountID)
-	providers := make([]string, 0, len(metrics.Nodes))
-	for i := range metrics.Nodes {
-		providers = append(providers, metrics.Nodes[i].Provider)
-	}
-	if accountIDBody == "" && aws.ClusterHasAWSNode(providers) {
-		if id := aws.GetAccountID(ctx); id != "" {
-			accountIDBody = id
-		}
-	}
-	return clusterIDBody, accountIDBody
+	return strings.TrimSpace(metrics.ClusterID), strings.TrimSpace(metrics.AccountID)
 }
 
 // ResolveExportIDs returns cluster_id and account_id for export; ok is false when either is empty (and logs a skip warning).
@@ -71,7 +59,7 @@ func ResolveExportIDs(ctx context.Context, log *slog.Logger, metrics collector.C
 		log.Warn("skip export: cluster_id and account_id must be non-empty in body",
 			"cluster_id_empty", clusterIDBody == "",
 			"account_id_empty", accountIDBody == "",
-			"hint", "account_id is derived from node provider/labels or AWS STS (EKS); ensure cluster has credentials or node labels")
+			"hint", "account_id comes from node providerID (GCP/Azure), node label (e.g. pump.co/account-id), or EC2 IMDS when on EKS")
 		return "", "", false
 	}
 	return clusterIDBody, accountIDBody, true
