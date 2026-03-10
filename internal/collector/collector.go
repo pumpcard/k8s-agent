@@ -4,10 +4,11 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"k8s-agent/internal/cloud"
-	_ "k8s-agent/internal/cloud/aws"
+	"k8s-agent/internal/cloud/aws"
 	_ "k8s-agent/internal/cloud/azure"
 	_ "k8s-agent/internal/cloud/gcp"
 
@@ -550,6 +551,17 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string
 		if id := nodeAccountID(&node); id != "" {
 			clusterAccountID = id
 			break
+		}
+	}
+	// EKS: providerID has no account ID; try EC2 instance metadata (no IAM required) if pod can reach node IMDS.
+	if clusterAccountID == "" {
+		for _, node := range nodes.Items {
+			if strings.HasPrefix(node.Spec.ProviderID, "aws://") {
+				if id := aws.AccountIDFromIMDS(ctx); id != "" {
+					clusterAccountID = id
+				}
+				break
+			}
 		}
 	}
 
