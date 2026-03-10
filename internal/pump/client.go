@@ -1,4 +1,4 @@
-package exporter
+package pump
 
 import (
 	"bytes"
@@ -15,7 +15,7 @@ import (
 const defaultEndpoint = "https://api-dev.pump.co/metrics-ingestion/cluster-metrics"
 const defaultTimeout = 90 * time.Second
 
-// Config holds export destination, identity (cluster/customer), and timeout.
+// Config holds Pump API destination, enable flag, and timeout.
 type Config struct {
 	Endpoint string
 	Enabled  bool
@@ -51,6 +51,7 @@ func ConfigFromEnv() Config {
 	return cfg
 }
 
+// Client sends cluster metrics payloads to the Pump metrics-ingestion API.
 type Client struct {
 	httpClient *http.Client
 	auth       *auth.TokenProvider
@@ -67,7 +68,8 @@ func NewClient(cfg Config) *Client {
 	}
 }
 
-func (c *Client) Export(endpoint, clusterID string, body []byte) error {
+// Send POSTs the JSON body to the Pump endpoint. clusterID is sent as X-Cluster-Id for request identification.
+func (c *Client) Send(endpoint, clusterID string, body []byte) error {
 	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return err

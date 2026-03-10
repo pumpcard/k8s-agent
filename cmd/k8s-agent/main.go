@@ -2,15 +2,14 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"os"
 	"strings"
 	"time"
 
 	"k8s-agent/internal/clusterid"
-	"k8s-agent/internal/collector"
-	"k8s-agent/internal/exporter"
+	"k8s-agent/internal/export"
+	"k8s-agent/internal/pump"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -18,17 +17,7 @@ import (
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
-const (
-	collectionInterval = 1 * time.Hour
-	payloadPreviewLen  = 1000 // max chars of request body in debug logs (shows cluster_id..start of nodes; account_id is logged separately)
-)
-
-func truncateForLog(s string, maxLen int) string {
-	if maxLen <= 0 || len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "...[truncated]"
-}
+const collectionInterval = 1 * time.Hour
 
 func main() {
 	logLevel := slog.LevelInfo
@@ -64,47 +53,23 @@ func main() {
 		metricsClient = mc
 	}
 
-	exportCfg := exporter.ConfigFromEnv()
+	pumpCfg := pump.ConfigFromEnv()
 	clusterID := clusterid.FromKubeSystem(context.Background(), client)
 	if clusterID == "" {
 		clusterID = "unknown"
 	}
-	exportClient := exporter.NewClient(exportCfg)
+	pumpClient := pump.NewClient(pumpCfg)
 
 	log.Info("k8s-agent started", "cluster", clusterID)
 
 	for {
 		ctx := context.Background()
-		metrics := collector.Collect(ctx, client, clusterID, metricsClient)
-		jsonData, err := json.Marshal(metrics)
+		exported, err := export.RunCycle(ctx, log, client, clusterID, metricsClient, pumpCfg, pumpClient)
 		if err != nil {
-			log.Error("marshal metrics", "error", err)
-			time.Sleep(collectionInterval)
-			continue
+			log.Error("metrics export failed", "error", err)
+		} else if exported {
+			log.Info("metrics export ok")
 		}
-
-		nodeCount := len(metrics.Nodes)
-		totalPods := 0
-		for i := range metrics.Nodes {
-			totalPods += len(metrics.Nodes[i].Pods)
-		}
-		log.Info("payload", "bytes", len(jsonData), "nodes", nodeCount, "pods", totalPods)
-
-		if exportCfg.Enabled {
-			// Debug-only: payload identity and preview for troubleshooting (enable with LOG_LEVEL=debug)
-			log.Debug("export payload",
-				"cluster_id", metrics.ClusterID,
-				"account_id", metrics.AccountID,
-				"payload_bytes", len(jsonData),
-				"payload_preview", truncateForLog(string(jsonData), payloadPreviewLen))
-			log.Info("exporting", "endpoint", exportCfg.Endpoint)
-			if err := exportClient.Export(exportCfg.Endpoint, clusterID, jsonData); err != nil {
-				log.Error("metrics export failed", "error", err)
-			} else {
-				log.Info("metrics export ok")
-			}
-		}
-
 		time.Sleep(collectionInterval)
 	}
 }
