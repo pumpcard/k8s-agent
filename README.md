@@ -10,12 +10,14 @@ A lightweight Kubernetes agent that collects cluster-level metrics from any Kube
 
 ## Quick Start
 
-### Install from Helm Repository (One-liner)
+When your backend requires a valid JWT, pass your `client_id` and `client_secret` from Auth0. The agent fetches the Bearer token automatically (domain and audience are built-in).
 
-When your backend requires a valid JWT, pass your `client_id` and `client_secret` from Auth0. The agent fetches the Bearer token automatically (domain and audience are built-in):
+**From the public Helm chart:**
 
 ```bash
-helm upgrade --install k8s-agent ./charts/k8s-agent \
+helm repo add k8s-agent https://pumpcard.github.io/k8s-agent
+helm repo update
+helm upgrade --install k8s-agent k8s-agent/k8s-agent \
   --namespace k8s-agent --create-namespace \
   --set defaultComponents.enabled=true \
   --set auth0.clientId="YOUR_CLIENT_ID" \
