@@ -33,3 +33,7 @@ rules:
   - apiGroups: ["metrics.k8s.io"]
     resources: ["nodes", "pods"]
     verbs: ["get", "list"]
+  # Read Karpenter CRDs for node lifecycle and cost optimization metrics
+  - apiGroups: ["karpenter.sh"]
+    resources: ["nodeclaims", "nodepools"]
+    verbs: ["get", "list", "watch"]

@@ -74,3 +74,15 @@ auth0:
   enabled: true
 
 env: []
+
+# Karpenter auto-install: installs Karpenter via a pre-install hook Job if not already present.
+# Requires clusterName and iamRoleArn when installIfMissing is true.
+karpenter:
+  installIfMissing: true
+  version: "1.1.1"
+  namespace: "kube-system"
+  clusterName: ""
+  clusterEndpoint: ""
+  iamRoleArn: ""
+  replicas: 2
+  installerImage: "alpine/helm:3.16.4"
