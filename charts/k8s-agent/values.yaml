@@ -79,7 +79,7 @@ env: []
 # Requires clusterName and iamRoleArn when installIfMissing is true.
 karpenter:
   installIfMissing: true
-  version: "1.1.1"
+  version: "1.9.0"
   namespace: "kube-system"
   clusterName: ""
   clusterEndpoint: ""
