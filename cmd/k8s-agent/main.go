@@ -18,7 +18,7 @@ import (
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
-const collectionInterval = 1 * time.Hour
+const collectionInterval = 1 * time.Minute
 
 func main() {
 	logLevel := slog.LevelInfo
