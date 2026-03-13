@@ -1,0 +1,78 @@
+{{- if .Values.karpenter.installIfMissing }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "k8s-agent.fullname" . }}-karpenter-installer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "k8s-agent.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        {{- include "k8s-agent.selectorLabels" . | nindent 8 }}
+        component: karpenter-installer
+    spec:
+      serviceAccountName: {{ include "k8s-agent.fullname" . }}-karpenter-installer
+      restartPolicy: Never
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: installer
+          image: {{ .Values.karpenter.installerImage | quote }}
+          env:
+            - name: KARPENTER_VERSION
+              value: {{ .Values.karpenter.version | quote }}
+            - name: KARPENTER_NAMESPACE
+              value: {{ .Values.karpenter.namespace | quote }}
+            - name: CLUSTER_NAME
+              value: {{ .Values.karpenter.clusterName | quote }}
+            - name: CLUSTER_ENDPOINT
+              value: {{ .Values.karpenter.clusterEndpoint | quote }}
+            - name: IAM_ROLE_ARN
+              value: {{ .Values.karpenter.iamRoleArn | quote }}
+            - name: KARPENTER_REPLICAS
+              value: {{ .Values.karpenter.replicas | default 2 | toString | quote }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              echo "Checking for existing Karpenter installation..."
+              if helm list -n "$KARPENTER_NAMESPACE" -q | grep -q '^karpenter$'; then
+                echo "Karpenter Helm release found in namespace $KARPENTER_NAMESPACE — skipping install."
+                exit 0
+              fi
+
+              if kubectl get crd nodeclaims.karpenter.sh >/dev/null 2>&1; then
+                echo "Karpenter CRDs detected (non-Helm install) — skipping install."
+                exit 0
+              fi
+
+              echo "Karpenter not found. Installing v${KARPENTER_VERSION} into namespace ${KARPENTER_NAMESPACE}..."
+
+              HELM_ARGS="--namespace $KARPENTER_NAMESPACE --create-namespace"
+              HELM_ARGS="$HELM_ARGS --version $KARPENTER_VERSION"
+              HELM_ARGS="$HELM_ARGS --set replicas=$KARPENTER_REPLICAS"
+
+              if [ -n "$CLUSTER_NAME" ]; then
+                HELM_ARGS="$HELM_ARGS --set settings.clusterName=$CLUSTER_NAME"
+              fi
+              if [ -n "$CLUSTER_ENDPOINT" ]; then
+                HELM_ARGS="$HELM_ARGS --set settings.clusterEndpoint=$CLUSTER_ENDPOINT"
+              fi
+              if [ -n "$IAM_ROLE_ARN" ]; then
+                HELM_ARGS="$HELM_ARGS --set serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn=$IAM_ROLE_ARN"
+              fi
+
+              helm upgrade --install karpenter oci://public.ecr.aws/karpenter/karpenter $HELM_ARGS --wait
+
+              echo "Karpenter v${KARPENTER_VERSION} installed successfully."
+{{- end }}
