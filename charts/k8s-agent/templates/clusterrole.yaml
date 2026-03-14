@@ -25,8 +25,8 @@ rules:
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["get", "list", "watch"]
-  # Read events for cluster health
-  - apiGroups: [""]
+  # Read events for cluster health (core and events.k8s.io APIs)
+  - apiGroups: ["", "events.k8s.io"]
     resources: ["events"]
     verbs: ["get", "list", "watch"]
   # Read metrics for CPU and memory usage

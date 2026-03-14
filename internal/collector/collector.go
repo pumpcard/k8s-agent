@@ -22,13 +22,14 @@ import (
 var collectorLog = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 type ClusterMetricsPayload struct {
-	ClusterID      string         `json:"cluster_id"`
-	Timestamp      string         `json:"timestamp"`
-	CollectionMode string         `json:"collection_mode"`
-	ClusterHealth  *ClusterHealth `json:"cluster_health"`
-	Summary        ClusterSummary `json:"summary"`
-	Nodes          []NodeMetrics  `json:"nodes"`
-	AccountID      string         `json:"account_id"` // Cloud account ID (AWS account, GCP project, or Azure subscription)
+	ClusterID      string            `json:"cluster_id"`
+	Timestamp      string            `json:"timestamp"`
+	CollectionMode string            `json:"collection_mode"`
+	ClusterHealth  *ClusterHealth    `json:"cluster_health"`
+	Summary        ClusterSummary    `json:"summary"`
+	Nodes          []NodeMetrics     `json:"nodes"`
+	AccountID      string            `json:"account_id"` // Cloud account ID (AWS account, GCP project, or Azure subscription)
+	Karpenter      *KarpenterMetrics `json:"karpenter,omitempty"`
 }
 
 type ClusterHealth struct {
