@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"k8s-agent/internal/clusterid"
+	"k8s-agent/internal/collector"
 	"k8s-agent/internal/export"
 	"k8s-agent/internal/pump"
 
@@ -69,6 +70,15 @@ func main() {
 
 	for {
 		ctx := context.Background()
+
+		karpenterMetrics := collector.CollectKarpenter(ctx, client, dynClient, clusterID)
+		log.Info("karpenter collection",
+			"nodes", len(karpenterMetrics.Nodes),
+			"events", len(karpenterMetrics.Events),
+			"node_claims", len(karpenterMetrics.NodeClaims),
+			"node_pools", len(karpenterMetrics.NodePools),
+		)
+
 		exported, err := export.RunCycle(ctx, log, client, clusterID, metricsClient, dynClient, pumpCfg, pumpClient)
 		if err != nil {
 			log.Error("metrics export failed", "error", err)
