@@ -92,7 +92,7 @@ func RunCycle(ctx context.Context, log *slog.Logger, client *kubernetes.Clientse
 	}
 	log.Info("payload", "bytes", len(payload.JSON), "nodes", len(payload.Metrics.Nodes), "pods", totalPods(&payload.Metrics))
 
-	collector.CollectKarpenter(ctx, client, dynClient, clusterID)
+	payload.Metrics.Karpenter = collector.CollectKarpenter(ctx, client, dynClient, clusterID)
 
 	if !pumpCfg.Enabled {
 		return false, nil
