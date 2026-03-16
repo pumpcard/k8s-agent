@@ -9,7 +9,6 @@ import (
 	"k8s-agent/internal/collector"
 	"k8s-agent/internal/pump"
 
-	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
 )
@@ -85,14 +84,12 @@ func Export(log *slog.Logger, pumpCfg pump.Config, pumpClient *pump.Client, clus
 
 // RunCycle collects metrics, logs payload size, and if Pump is enabled resolves IDs and sends to Pump.
 // Returns (true, nil) when a payload was sent successfully, (false, nil) when skipped or Pump disabled, (false, err) on error.
-func RunCycle(ctx context.Context, log *slog.Logger, client *kubernetes.Clientset, clusterID string, metricsClient *metricsclient.Clientset, dynClient dynamic.Interface, pumpCfg pump.Config, pumpClient *pump.Client) (exported bool, err error) {
+func RunCycle(ctx context.Context, log *slog.Logger, client *kubernetes.Clientset, clusterID string, metricsClient *metricsclient.Clientset, pumpCfg pump.Config, pumpClient *pump.Client) (exported bool, err error) {
 	payload, err := CollectPayload(ctx, client, clusterID, metricsClient)
 	if err != nil {
 		return false, err
 	}
 	log.Info("payload", "bytes", len(payload.JSON), "nodes", len(payload.Metrics.Nodes), "pods", totalPods(&payload.Metrics))
-
-	payload.Metrics.Karpenter = collector.CollectKarpenter(ctx, client, dynClient, clusterID)
 
 	if !pumpCfg.Enabled {
 		return false, nil
