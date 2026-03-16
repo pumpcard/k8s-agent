@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,7 +16,10 @@ import (
 
 var karpenterLog = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
+var lastSeenResourceVersion int64
+
 type KarpenterEvent struct {
+	UID            string `json:"uid"`
 	Timestamp      string `json:"timestamp"`
 	Reason         string `json:"reason"`
 	Message        string `json:"message"`
@@ -51,20 +55,37 @@ func collectKarpenterEvents(ctx context.Context, client kubernetes.Interface, me
 		return
 	}
 
+	var maxRV int64
 	for i := range eventList.Items {
 		event := &eventList.Items[i]
 		if !isKarpenterEvent(event) {
 			continue
 		}
+		rv, _ := strconv.ParseInt(event.ResourceVersion, 10, 64)
+		if rv > maxRV {
+			maxRV = rv
+		}
+		if rv <= lastSeenResourceVersion {
+			continue
+		}
 		ke := KarpenterEvent{
+			UID:            string(event.UID),
 			Reason:         event.Reason,
 			Message:        event.Message,
 			InvolvedObject: event.InvolvedObject.Name,
 			ObjectKind:     event.InvolvedObject.Kind,
 			Count:          event.Count,
 		}
-		ke.Timestamp = event.EventTime.Format(time.RFC3339)
+		switch {
+		case !event.EventTime.IsZero():
+			ke.Timestamp = event.EventTime.Format(time.RFC3339)
+		case !event.LastTimestamp.IsZero():
+			ke.Timestamp = event.LastTimestamp.Format(time.RFC3339)
+		case !event.FirstTimestamp.IsZero():
+			ke.Timestamp = event.FirstTimestamp.Format(time.RFC3339)
+		}
 		karpenterLog.Info("karpenter_event",
+			"uid", ke.UID,
 			"reason", ke.Reason,
 			"message", ke.Message,
 			"involved_object", ke.InvolvedObject,
@@ -74,12 +95,21 @@ func collectKarpenterEvents(ctx context.Context, client kubernetes.Interface, me
 		)
 		metrics.Events = append(metrics.Events, ke)
 	}
+	lastSeenResourceVersion = maxRV
 	karpenterLog.Info("karpenter_events_collected", "count", len(metrics.Events))
 }
 
+var scalingReasons = map[string]bool{
+	"Launched":              true,
+	"DisruptionTerminating": true,
+}
+
 func isKarpenterEvent(event *corev1.Event) bool {
-	return strings.Contains(strings.ToLower(event.Source.Component), "karpenter") ||
-		strings.Contains(strings.ToLower(event.ReportingController), "karpenter")
+	if !strings.Contains(strings.ToLower(event.Source.Component), "karpenter") &&
+		!strings.Contains(strings.ToLower(event.ReportingController), "karpenter") {
+		return false
+	}
+	return scalingReasons[event.Reason]
 }
 
 func logKarpenterMetrics(metrics *KarpenterMetrics) {
