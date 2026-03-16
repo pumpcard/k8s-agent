@@ -80,6 +80,9 @@ type NodeMetrics struct {
 	Zone                            string             `json:"zone,omitempty"`          // availability zone, e.g. us-west-2a
 	Region                          string             `json:"region,omitempty"`        // e.g. us-west-2
 	ProjectID                       string             `json:"project_id,omitempty"`    // GCP project ID when applicable
+	CapacityType                    string             `json:"capacity_type,omitempty"` // Karpenter: on-demand or spot
+	NodePoolName                    string             `json:"node_pool_name,omitempty"`
+	NodeClaimName                   string             `json:"node_claim_name,omitempty"`
 	Capacity                        ResourceMetrics    `json:"capacity"`
 	Allocatable                     ResourceMetrics    `json:"allocatable"`
 	Usage                           ResourceMetrics    `json:"usage"`
@@ -611,6 +614,9 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string
 			Zone:                            zone,
 			Region:                          region,
 			ProjectID:                       cloud.ProjectID(node.Spec.ProviderID),
+			CapacityType:                    node.Labels["karpenter.sh/capacity-type"],
+			NodePoolName:                    node.Labels["karpenter.sh/nodepool"],
+			NodeClaimName:                   node.Labels["karpenter.sh/nodeclaim"],
 			Capacity:                        resourceMetricsFromQuantities(capacityCPU, capacityMemory),
 			Allocatable:                     resourceMetricsFromQuantities(allocatableCPU, allocatableMemory),
 			Usage:                           resourceMetricsFromQuantities(usageCPU, usageMem),
