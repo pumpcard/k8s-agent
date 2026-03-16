@@ -12,7 +12,6 @@ import (
 	"k8s-agent/internal/export"
 	"k8s-agent/internal/pump"
 
-	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -54,11 +53,6 @@ func main() {
 	if mc, err := metricsclient.NewForConfig(cfg); err == nil {
 		metricsClient = mc
 	}
-	var dynClient dynamic.Interface
-	if dc, err := dynamic.NewForConfig(cfg); err == nil {
-		dynClient = dc
-	}
-
 	pumpCfg := pump.ConfigFromEnv()
 	clusterID := clusterid.FromKubeSystem(context.Background(), client)
 	if clusterID == "" {
@@ -71,15 +65,10 @@ func main() {
 	for {
 		ctx := context.Background()
 
-		karpenterMetrics := collector.CollectKarpenter(ctx, client, dynClient, clusterID)
-		log.Info("karpenter collection",
-			"nodes", len(karpenterMetrics.Nodes),
-			"events", len(karpenterMetrics.Events),
-			"node_claims", len(karpenterMetrics.NodeClaims),
-			"node_pools", len(karpenterMetrics.NodePools),
-		)
+		karpenterMetrics := collector.CollectKarpenter(ctx, client, clusterID)
+		log.Info("karpenter collection", "events", len(karpenterMetrics.Events))
 
-		exported, err := export.RunCycle(ctx, log, client, clusterID, metricsClient, dynClient, pumpCfg, pumpClient)
+		exported, err := export.RunCycle(ctx, log, client, clusterID, metricsClient, pumpCfg, pumpClient)
 		if err != nil {
 			log.Error("metrics export failed", "error", err)
 		} else if exported {
