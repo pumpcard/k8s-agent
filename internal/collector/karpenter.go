@@ -58,7 +58,7 @@ func collectKarpenterEvents(ctx context.Context, client kubernetes.Interface, me
 	var maxRV int64
 	for i := range eventList.Items {
 		event := &eventList.Items[i]
-		if !isKarpenterEvent(event) {
+		if !isKarpenterSource(event) || !isRelevantEventReason[event.Reason] {
 			continue
 		}
 		rv, _ := strconv.ParseInt(event.ResourceVersion, 10, 64)
@@ -99,17 +99,14 @@ func collectKarpenterEvents(ctx context.Context, client kubernetes.Interface, me
 	karpenterLog.Info("karpenter_events_collected", "count", len(metrics.Events))
 }
 
-var scalingReasons = map[string]bool{
+var isRelevantEventReason = map[string]bool{
 	"Launched":              true,
 	"DisruptionTerminating": true,
 }
 
-func isKarpenterEvent(event *corev1.Event) bool {
-	if !strings.Contains(strings.ToLower(event.Source.Component), "karpenter") &&
-		!strings.Contains(strings.ToLower(event.ReportingController), "karpenter") {
-		return false
-	}
-	return scalingReasons[event.Reason]
+func isKarpenterSource(event *corev1.Event) bool {
+	return strings.Contains(strings.ToLower(event.Source.Component), "karpenter") ||
+		strings.Contains(strings.ToLower(event.ReportingController), "karpenter")
 }
 
 func logKarpenterMetrics(metrics *KarpenterMetrics) {
