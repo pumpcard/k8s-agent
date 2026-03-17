@@ -112,7 +112,6 @@ func collectKarpenterEvents(ctx context.Context, client kubernetes.Interface, me
 }
 
 var isRelevantEventReason = map[string]bool{
-	"Launched":              true,
 	"DisruptionTerminating": true,
 }
 
