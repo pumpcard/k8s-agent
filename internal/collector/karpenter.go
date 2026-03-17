@@ -11,6 +11,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -28,21 +30,31 @@ type KarpenterEvent struct {
 	Count          int32  `json:"count"`
 }
 
+type NodePoolInfo struct {
+	Name      string `json:"name"`
+	NodeCount int    `json:"node_count"`
+}
+
 type KarpenterMetrics struct {
 	CollectedAt string           `json:"collected_at"`
 	ClusterID   string           `json:"cluster_id"`
 	Events      []KarpenterEvent `json:"events"`
+	NodePools   []NodePoolInfo   `json:"node_pools"`
 }
 
-func CollectKarpenter(ctx context.Context, client kubernetes.Interface, clusterID string) *KarpenterMetrics {
+func CollectKarpenter(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Interface, clusterID string) *KarpenterMetrics {
 	ts := time.Now().UTC().Format(time.RFC3339)
 	metrics := &KarpenterMetrics{
 		CollectedAt: ts,
 		ClusterID:   clusterID,
 		Events:      []KarpenterEvent{},
+		NodePools:   []NodePoolInfo{},
 	}
 
 	collectKarpenterEvents(ctx, client, metrics)
+	if dynClient != nil {
+		collectNodePools(ctx, client, dynClient, metrics)
+	}
 
 	logKarpenterMetrics(metrics)
 	return metrics
@@ -109,6 +121,43 @@ func isKarpenterSource(event *corev1.Event) bool {
 		strings.Contains(strings.ToLower(event.ReportingController), "karpenter")
 }
 
+var nodePoolGVR = schema.GroupVersionResource{
+	Group:    "karpenter.sh",
+	Version:  "v1",
+	Resource: "nodepools",
+}
+
+func collectNodePools(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Interface, metrics *KarpenterMetrics) {
+	list, err := dynClient.Resource(nodePoolGVR).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		karpenterLog.Warn("nodepool_list_failed", "error", err)
+		return
+	}
+
+	nodeCountByPool := make(map[string]int)
+	nodes, err := client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		karpenterLog.Warn("nodepool_node_count_failed", "error", err)
+	} else {
+		for i := range nodes.Items {
+			if pool := nodes.Items[i].Labels["karpenter.sh/nodepool"]; pool != "" {
+				nodeCountByPool[pool]++
+			}
+		}
+	}
+
+	for i := range list.Items {
+		name := list.Items[i].GetName()
+		np := NodePoolInfo{
+			Name:      name,
+			NodeCount: nodeCountByPool[name],
+		}
+		karpenterLog.Info("nodepool_collected", "name", np.Name, "node_count", np.NodeCount)
+		metrics.NodePools = append(metrics.NodePools, np)
+	}
+	karpenterLog.Info("nodepools_collected", "count", len(metrics.NodePools))
+}
+
 func logKarpenterMetrics(metrics *KarpenterMetrics) {
 	data, err := json.Marshal(metrics)
 	if err != nil {
@@ -118,6 +167,7 @@ func logKarpenterMetrics(metrics *KarpenterMetrics) {
 	karpenterLog.Info("karpenter_metrics_collected",
 		"cluster_id", metrics.ClusterID,
 		"karpenter_events", len(metrics.Events),
+		"node_pools", len(metrics.NodePools),
 	)
 	karpenterLog.Info("karpenter_metrics", "payload", json.RawMessage(data))
 }
