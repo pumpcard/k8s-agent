@@ -22,35 +22,11 @@ import (
 var collectorLog = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 type ClusterMetricsPayload struct {
-	ClusterID      string            `json:"cluster_id"`
-	Timestamp      string            `json:"timestamp"`
-	CollectionMode string            `json:"collection_mode"`
-	ClusterHealth  *ClusterHealth    `json:"cluster_health"`
-	Summary        ClusterSummary    `json:"summary"`
-	Nodes          []NodeMetrics     `json:"nodes"`
-	AccountID      string            `json:"account_id"` // Cloud account ID (AWS account, GCP project, or Azure subscription)
-	Karpenter      *KarpenterMetrics `json:"karpenter,omitempty"`
-}
-
-type ClusterHealth struct {
-	TotalNodes                  int     `json:"total_nodes"`
-	ReadyNodes                  int     `json:"ready_nodes"`
-	NotReadyNodes               int     `json:"not_ready_nodes"`
-	OverallStatus               string  `json:"overall_status"` // healthy | warning | degraded
-	AvgCPUUtilizationPercent    float64 `json:"avg_cpu_utilization_percent"`
-	AvgMemoryUtilizationPercent float64 `json:"avg_memory_utilization_percent"`
-	TotalCPUUsage               string  `json:"total_cpu_usage"`    // Kubernetes quantity format
-	TotalMemoryUsage            string  `json:"total_memory_usage"` // Kubernetes quantity format
-	TotalCPUCapacity            string  `json:"total_cpu_capacity"`
-	TotalMemoryCapacity         string  `json:"total_memory_capacity"`
-}
-
-type ClusterSummary struct {
-	TotalPods     int `json:"total_pods"`
-	RunningPods   int `json:"running_pods"`
-	PendingPods   int `json:"pending_pods"`
-	FailedPods    int `json:"failed_pods"`
-	SucceededPods int `json:"succeeded_pods"`
+	ClusterID string            `json:"cluster_id"`
+	Timestamp string            `json:"timestamp"`
+	Nodes     []NodeMetrics     `json:"nodes"`
+	AccountID string            `json:"account_id"` // Cloud account ID (AWS account, GCP project, or Azure subscription)
+	Karpenter *KarpenterMetrics `json:"karpenter,omitempty"`
 }
 
 // ResourceMetrics matches API: both string quantities and numeric fields required.
@@ -69,49 +45,24 @@ type NodeCondition struct {
 }
 
 type NodeMetrics struct {
-	Name           string `json:"name"`
-	Architecture   string `json:"architecture"`
-	KubeletVersion string `json:"kubelet_version"`
-	OSImage        string `json:"os_image"`
-	// Cloud provider fields for cost/RI/SP correlation (from labels and providerID)
-	Provider                        string             `json:"provider,omitempty"`      // aws, gcp, azure, or empty if unknown
-	InstanceType                    string             `json:"instance_type,omitempty"` // e.g. m5.2xlarge, n2-standard-4
-	InstanceID                      string             `json:"instance_id,omitempty"`   // e.g. i-0abc123 (AWS), VM name (GCP/Azure)
-	Zone                            string             `json:"zone,omitempty"`          // availability zone, e.g. us-west-2a
-	Region                          string             `json:"region,omitempty"`        // e.g. us-west-2
-	ProjectID                       string             `json:"project_id,omitempty"`    // GCP project ID when applicable
-	CapacityType                    string             `json:"capacity_type,omitempty"` // Karpenter: on-demand or spot
-	NodePoolName                    string             `json:"node_pool_name,omitempty"`
-	NodeClaimName                   string             `json:"node_claim_name,omitempty"`
-	Capacity                        ResourceMetrics    `json:"capacity"`
-	Allocatable                     ResourceMetrics    `json:"allocatable"`
-	Usage                           ResourceMetrics    `json:"usage"`
-	K8sNodeCPUCapacityMillicores    int64              `json:"k8s_node_cpu_capacity_millicores"`
-	K8sNodeMemoryCapacityBytes      int64              `json:"k8s_node_memory_capacity_bytes"`
-	K8sNodeCPUAllocatableMillicores int64              `json:"k8s_node_cpu_allocatable_millicores"`
-	K8sNodeMemoryAllocatableBytes   int64              `json:"k8s_node_memory_allocatable_bytes"`
-	K8sNodeCPUUsageMillicores       int64              `json:"k8s_node_cpu_usage_millicores"`
-	K8sNodeMemoryUsageBytes         int64              `json:"k8s_node_memory_usage_bytes"`
-	Utilization                     UtilizationMetrics `json:"utilization"`
-	Health                          NodeHealth         `json:"health"`
-	Conditions                      []NodeCondition    `json:"conditions"`
-	Pods                            []PodSummary       `json:"pods"`
-}
-
-// UtilizationMetrics status: healthy | warning | critical | unknown
-type UtilizationMetrics struct {
-	CPUPercent    float64 `json:"cpu_percent"`
-	MemoryPercent float64 `json:"memory_percent"`
-	Status        string  `json:"status"`
-}
-
-type NodeHealth struct {
-	Ready              bool   `json:"ready"`
-	ReadyStatus        string `json:"ready_status"`
-	MemoryPressure     bool   `json:"memory_pressure"`
-	DiskPressure       bool   `json:"disk_pressure"`
-	PIDPressure        bool   `json:"pid_pressure"`
-	NetworkUnavailable bool   `json:"network_unavailable"`
+	Name           string          `json:"name"`
+	Architecture   string          `json:"architecture"`
+	KubeletVersion string          `json:"kubelet_version"`
+	OSImage        string          `json:"os_image"`
+	Provider       string          `json:"provider,omitempty"`
+	InstanceType   string          `json:"instance_type,omitempty"`
+	InstanceID     string          `json:"instance_id,omitempty"`
+	Zone           string          `json:"zone,omitempty"`
+	Region         string          `json:"region,omitempty"`
+	ProjectID      string          `json:"project_id,omitempty"`
+	CapacityType   string          `json:"capacity_type,omitempty"`
+	NodePoolName   string          `json:"node_pool_name,omitempty"`
+	NodeClaimName  string          `json:"node_claim_name,omitempty"`
+	Capacity       ResourceMetrics `json:"capacity"`
+	Allocatable    ResourceMetrics `json:"allocatable"`
+	Usage          ResourceMetrics `json:"usage"`
+	Conditions     []NodeCondition `json:"conditions"`
+	Pods           []PodSummary    `json:"pods"`
 }
 
 type ContainerInfo struct {
@@ -125,21 +76,20 @@ type ContainerInfo struct {
 }
 
 type PodSummary struct {
-	Namespace      string              `json:"namespace"`
-	Name           string              `json:"name"`
-	Node           string              `json:"node"`
-	Phase          string              `json:"phase"`     // Pending | Running | Succeeded | Failed | Unknown
-	QOSClass       string              `json:"qos_class"` // Guaranteed | Burstable | BestEffort
-	Ready          bool                `json:"ready"`
-	RestartCount   int                 `json:"restart_count"`
-	StartTime      *string             `json:"start_time,omitempty"`
-	Containers     []ContainerInfo     `json:"containers"`
-	Requests       ResourceMetrics     `json:"requests"`
-	Limits         ResourceMetrics     `json:"limits"`
-	Usage          *ResourceMetrics    `json:"usage,omitempty"`
-	Utilization    *UtilizationMetrics `json:"utilization,omitempty"`
-	Labels         map[string]string   `json:"labels,omitempty"`
-	OwnerReference *string             `json:"owner_reference,omitempty"`
+	Namespace      string            `json:"namespace"`
+	Name           string            `json:"name"`
+	Node           string            `json:"node"`
+	Phase          string            `json:"phase"`
+	QOSClass       string            `json:"qos_class"`
+	Ready          bool              `json:"ready"`
+	RestartCount   int               `json:"restart_count"`
+	StartTime      *string           `json:"start_time,omitempty"`
+	Containers     []ContainerInfo   `json:"containers"`
+	Requests       ResourceMetrics   `json:"requests"`
+	Limits         ResourceMetrics   `json:"limits"`
+	Usage          *ResourceMetrics  `json:"usage,omitempty"`
+	Labels         map[string]string `json:"labels,omitempty"`
+	OwnerReference *string           `json:"owner_reference,omitempty"`
 }
 
 func quantityToMilli(quantity resource.Quantity) int64 {
@@ -162,27 +112,6 @@ func resourceMetricsFromQuantities(cpuQuantity resource.Quantity, memQuantity re
 		CPUMillicores: quantityToMilli(cpuQuantity),
 		MemoryBytes:   quantityToBytes(memQuantity),
 	}
-}
-
-func nodeConditionStatus(conditions []corev1.NodeCondition, conditionType corev1.NodeConditionType) bool {
-	for _, condition := range conditions {
-		if condition.Type == conditionType {
-			return condition.Status == corev1.ConditionTrue
-		}
-	}
-	return false
-}
-
-func nodeReadyStatus(conditions []corev1.NodeCondition) string {
-	for _, condition := range conditions {
-		if condition.Type == corev1.NodeReady {
-			if condition.Status == corev1.ConditionTrue {
-				return "Ready"
-			}
-			return "NotReady"
-		}
-	}
-	return "Unknown"
 }
 
 // nodeCloudInfo extracts instance type, instance ID, zone, region, provider from node labels and providerID.
@@ -318,38 +247,11 @@ func qosClassAPI(qosClass corev1.PodQOSClass) string {
 // resourceUsage holds CPU millicores and memory bytes (from metrics.k8s.io).
 type resourceUsage struct{ cpuMilli, memBytes int64 }
 
-var systemNamespaces = map[string]bool{
-	// Kubernetes core
-	"kube-system":     true,
-	"kube-public":     true,
-	"kube-node-lease": true,
-	// GKE
-	"gke-managed-cim":          true,
-	"gke-gmp-system":           true,
-	"gmp-system":               true,
-	"gke-managed-filestorecsi": true,
-	"gke-managed-system":       true,
-	// EKS
-	"amazon-cloudwatch": true,
-	"aws-observability": true,
-	"amazon-guardduty":  true,
-	// AKS
-	"gatekeeper-system": true,
-	"calico-system":     true,
-	"tigera-operator":   true,
-}
-
-func isSystemNamespace(ns string) bool {
-	return systemNamespaces[ns]
-}
-
 func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string, metricsClient *metricsclient.Clientset) ClusterMetricsPayload {
 	ts := time.Now().UTC().Format(time.RFC3339)
 	empty := ClusterMetricsPayload{
-		Timestamp:      ts,
-		CollectionMode: "cluster",
-		Summary:        ClusterSummary{},
-		Nodes:          []NodeMetrics{},
+		Timestamp: ts,
+		Nodes:     []NodeMetrics{},
 	}
 
 	collectorLog.Debug("collect_start", "cluster_id", clusterID)
@@ -409,22 +311,7 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string
 	}
 
 	podsByNode := make(map[string][]PodSummary)
-	var running, pending, failed, succeeded, skippedSystem int
 	for _, pod := range pods.Items {
-		if isSystemNamespace(pod.Namespace) {
-			skippedSystem++
-			continue
-		}
-		switch pod.Status.Phase {
-		case corev1.PodRunning:
-			running++
-		case corev1.PodPending:
-			pending++
-		case corev1.PodFailed:
-			failed++
-		case corev1.PodSucceeded:
-			succeeded++
-		}
 		restartCount := 0
 		containers := make([]ContainerInfo, 0, len(pod.Spec.Containers))
 		statusByName := make(map[string]*corev1.ContainerStatus)
@@ -464,7 +351,6 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string
 			Requests:       resourceMetricsFromQuantities(*requestedCPUQuantity, *requestedMemoryQuantity),
 			Limits:         resourceMetricsFromQuantities(*limitCPUQuantity, *limitMemoryQuantity),
 			Usage:          nil,
-			Utilization:    nil,
 			Labels:         labels,
 			OwnerReference: podOwnerRef(pod.OwnerReferences),
 		}
@@ -477,78 +363,11 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string
 				CPUMillicores: usage.cpuMilli,
 				MemoryBytes:   usage.memBytes,
 			}
-			var cpuPercent, memoryPercent float64
-			if requestedCPUMillicores > 0 {
-				cpuPercent = capPercent(100 * float64(usage.cpuMilli) / float64(requestedCPUMillicores))
-			}
-			if requestedMemoryBytes > 0 {
-				memoryPercent = capPercent(100 * float64(usage.memBytes) / float64(requestedMemoryBytes))
-			}
-			podSummary.Utilization = &UtilizationMetrics{CPUPercent: cpuPercent, MemoryPercent: memoryPercent, Status: "unknown"}
 		}
-		nodeName := pod.Spec.NodeName
-		podsByNode[nodeName] = append(podsByNode[nodeName], podSummary)
+		podsByNode[pod.Spec.NodeName] = append(podsByNode[pod.Spec.NodeName], podSummary)
 	}
 
-	collectorLog.Debug("pods_filtered", "collected", running+pending+failed+succeeded, "skipped_system", skippedSystem)
-
-	var totalCapCPU, totalCapMem resource.Quantity
-	var totalAllocCPU, totalAllocMem resource.Quantity
-	var totalUsageCPU, totalUsageMem int64
-	readyNodes := 0
-	for _, node := range nodes.Items {
-		capacity := node.Status.Capacity
-		allocatable := node.Status.Allocatable
-		totalCapCPU.Add(capacity[corev1.ResourceCPU])
-		totalCapMem.Add(capacity[corev1.ResourceMemory])
-		totalAllocCPU.Add(allocatable[corev1.ResourceCPU])
-		totalAllocMem.Add(allocatable[corev1.ResourceMemory])
-		if nodeUsage, ok := nodeUsageMap[node.Name]; ok {
-			totalUsageCPU += nodeUsage.cpuMilli
-			totalUsageMem += nodeUsage.memBytes
-		}
-		if nodeConditionStatus(node.Status.Conditions, corev1.NodeReady) {
-			readyNodes++
-		}
-	}
-	zeroQuantity := resource.MustParse("0")
-	overallStatus := "healthy"
-	if readyNodes < len(nodes.Items) {
-		overallStatus = "degraded"
-	}
-	if len(nodes.Items) == 0 {
-		overallStatus = "degraded"
-	}
-	totalUsageCPUQ := resource.NewMilliQuantity(totalUsageCPU, resource.DecimalSI)
-	totalUsageMemQ := resource.NewQuantity(totalUsageMem, resource.BinarySI)
-	avgCPUUtilizationPercent := 0.0
-	avgMemoryUtilizationPercent := 0.0
-	if allocMilli := quantityToMilli(totalAllocCPU); allocMilli > 0 {
-		avgCPUUtilizationPercent = 100 * float64(totalUsageCPU) / float64(allocMilli)
-	}
-	if allocBytes := quantityToBytes(totalAllocMem); allocBytes > 0 {
-		avgMemoryUtilizationPercent = 100 * float64(totalUsageMem) / float64(allocBytes)
-	}
-	clusterHealth := &ClusterHealth{
-		TotalNodes:                  len(nodes.Items),
-		ReadyNodes:                  readyNodes,
-		NotReadyNodes:               len(nodes.Items) - readyNodes,
-		OverallStatus:               overallStatus,
-		AvgCPUUtilizationPercent:    avgCPUUtilizationPercent,
-		AvgMemoryUtilizationPercent: avgMemoryUtilizationPercent,
-		TotalCPUUsage:               totalUsageCPUQ.String(),
-		TotalMemoryUsage:            totalUsageMemQ.String(),
-		TotalCPUCapacity:            totalCapCPU.String(),
-		TotalMemoryCapacity:         totalCapMem.String(),
-	}
-	collectorLog.Debug("cluster_health",
-		"total_nodes", clusterHealth.TotalNodes,
-		"ready_nodes", clusterHealth.ReadyNodes,
-		"overall_status", clusterHealth.OverallStatus,
-		"total_cpu_usage", clusterHealth.TotalCPUUsage,
-		"total_memory_usage", clusterHealth.TotalMemoryUsage,
-		"avg_cpu_utilization_percent", avgCPUUtilizationPercent,
-		"avg_memory_utilization_percent", avgMemoryUtilizationPercent)
+	collectorLog.Debug("pods_collected", "count", len(pods.Items))
 
 	clusterAccountID := ""
 	for _, node := range nodes.Items {
@@ -557,7 +376,6 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string
 			break
 		}
 	}
-	// EKS: providerID has no account ID; try EC2 instance metadata (no IAM required) if pod can reach node IMDS.
 	if clusterAccountID == "" {
 		for _, node := range nodes.Items {
 			if strings.HasPrefix(node.Spec.ProviderID, "aws://") {
@@ -569,6 +387,7 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string
 		}
 	}
 
+	zeroQuantity := resource.MustParse("0")
 	nodeList := make([]NodeMetrics, 0, len(nodes.Items))
 	for _, node := range nodes.Items {
 		capacity := node.Status.Capacity
@@ -585,77 +404,35 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string
 		}
 		usageCPU := zeroQuantity
 		usageMem := zeroQuantity
-		usageMilli := int64(0)
-		usageBytes := int64(0)
-		cpuPercent := 0.0
-		memoryPercent := 0.0
 		if nodeUsage, ok := nodeUsageMap[node.Name]; ok {
-			usageMilli = nodeUsage.cpuMilli
-			usageBytes = nodeUsage.memBytes
 			usageCPU = *resource.NewMilliQuantity(nodeUsage.cpuMilli, resource.DecimalSI)
 			usageMem = *resource.NewQuantity(nodeUsage.memBytes, resource.BinarySI)
-			allocMilli := quantityToMilli(allocatableCPU)
-			allocBytes := quantityToBytes(allocatableMemory)
-			if allocMilli > 0 {
-				cpuPercent = 100 * float64(nodeUsage.cpuMilli) / float64(allocMilli)
-			}
-			if allocBytes > 0 {
-				memoryPercent = 100 * float64(nodeUsage.memBytes) / float64(allocBytes)
-			}
 		}
 		nodeList = append(nodeList, NodeMetrics{
-			Name:                            node.Name,
-			Architecture:                    nodeInfo.Architecture,
-			KubeletVersion:                  nodeInfo.KubeletVersion,
-			OSImage:                         nodeInfo.OSImage,
-			Provider:                        provider,
-			InstanceType:                    instanceType,
-			InstanceID:                      instanceID,
-			Zone:                            zone,
-			Region:                          region,
-			ProjectID:                       cloud.ProjectID(node.Spec.ProviderID),
-			CapacityType:                    node.Labels["karpenter.sh/capacity-type"],
-			NodePoolName:                    node.Labels["karpenter.sh/nodepool"],
-			NodeClaimName:                   node.Labels["karpenter.sh/nodeclaim"],
-			Capacity:                        resourceMetricsFromQuantities(capacityCPU, capacityMemory),
-			Allocatable:                     resourceMetricsFromQuantities(allocatableCPU, allocatableMemory),
-			Usage:                           resourceMetricsFromQuantities(usageCPU, usageMem),
-			K8sNodeCPUCapacityMillicores:    quantityToMilli(capacityCPU),
-			K8sNodeMemoryCapacityBytes:      quantityToBytes(capacityMemory),
-			K8sNodeCPUAllocatableMillicores: quantityToMilli(allocatableCPU),
-			K8sNodeMemoryAllocatableBytes:   quantityToBytes(allocatableMemory),
-			K8sNodeCPUUsageMillicores:       usageMilli,
-			K8sNodeMemoryUsageBytes:         usageBytes,
-			Utilization: UtilizationMetrics{
-				CPUPercent:    cpuPercent,
-				MemoryPercent: memoryPercent,
-				Status:        "unknown",
-			},
-			Health: NodeHealth{
-				Ready:              nodeConditionStatus(node.Status.Conditions, corev1.NodeReady),
-				ReadyStatus:        nodeReadyStatus(node.Status.Conditions),
-				MemoryPressure:     nodeConditionStatus(node.Status.Conditions, corev1.NodeMemoryPressure),
-				DiskPressure:       nodeConditionStatus(node.Status.Conditions, corev1.NodeDiskPressure),
-				PIDPressure:        nodeConditionStatus(node.Status.Conditions, corev1.NodePIDPressure),
-				NetworkUnavailable: nodeConditionStatus(node.Status.Conditions, corev1.NodeNetworkUnavailable),
-			},
-			Conditions: nodeConditionsFromK8s(node.Status.Conditions),
-			Pods:       nodePods,
+			Name:          node.Name,
+			Architecture:  nodeInfo.Architecture,
+			KubeletVersion: nodeInfo.KubeletVersion,
+			OSImage:       nodeInfo.OSImage,
+			Provider:      provider,
+			InstanceType:  instanceType,
+			InstanceID:    instanceID,
+			Zone:          zone,
+			Region:        region,
+			ProjectID:     cloud.ProjectID(node.Spec.ProviderID),
+			CapacityType:  node.Labels["karpenter.sh/capacity-type"],
+			NodePoolName:  node.Labels["karpenter.sh/nodepool"],
+			NodeClaimName: node.Labels["karpenter.sh/nodeclaim"],
+			Capacity:      resourceMetricsFromQuantities(capacityCPU, capacityMemory),
+			Allocatable:   resourceMetricsFromQuantities(allocatableCPU, allocatableMemory),
+			Usage:         resourceMetricsFromQuantities(usageCPU, usageMem),
+			Conditions:    nodeConditionsFromK8s(node.Status.Conditions),
+			Pods:          nodePods,
 		})
 	}
 
 	payload := ClusterMetricsPayload{
-		ClusterID:      clusterID,
-		Timestamp:      ts,
-		CollectionMode: "cluster",
-		ClusterHealth:  clusterHealth,
-		Summary: ClusterSummary{
-			TotalPods:     len(pods.Items),
-			RunningPods:   running,
-			PendingPods:   pending,
-			FailedPods:    failed,
-			SucceededPods: succeeded,
-		},
+		ClusterID: clusterID,
+		Timestamp: ts,
 		Nodes:     nodeList,
 		AccountID: clusterAccountID,
 	}
@@ -663,24 +440,11 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string
 		collectorLog.Debug("payload_node",
 			"node", node.Name,
 			"pods", len(node.Pods),
-			"cpu_millicores", node.K8sNodeCPUUsageMillicores,
-			"memory_bytes", node.K8sNodeMemoryUsageBytes,
-			"capacity_cpu_milli", node.K8sNodeCPUCapacityMillicores,
-			"allocatable_memory_bytes", node.K8sNodeMemoryAllocatableBytes)
+			"usage_cpu", node.Usage.CPU,
+			"usage_memory", node.Usage.Memory)
 	}
-	collectorLog.Debug("collect_done",
-		"summary", slog.Group("payload",
-			"nodes", len(payload.Nodes),
-			"pods_total", payload.Summary.TotalPods,
-			"running", payload.Summary.RunningPods))
+	collectorLog.Debug("collect_done", "nodes", len(payload.Nodes))
 	return payload
-}
-
-func capPercent(v float64) float64 {
-	if v > 100 {
-		return 100
-	}
-	return v
 }
 
 func sumContainerRequestsLimits(containers []corev1.Container, useLimits bool) (cpuMillicores, memoryBytes int64) {
