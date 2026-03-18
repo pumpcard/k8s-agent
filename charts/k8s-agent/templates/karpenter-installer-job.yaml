@@ -1,4 +1,10 @@
 {{- if .Values.karpenter.installIfMissing }}
+{{- if not .Values.karpenter.clusterName }}
+{{- fail "karpenter.clusterName is required when karpenter.installIfMissing is true. Set it to your EKS cluster name, or set karpenter.installIfMissing=false." }}
+{{- end }}
+{{- if not .Values.karpenter.iamRoleArn }}
+{{- fail "karpenter.iamRoleArn is required when karpenter.installIfMissing is true. Set it to the IAM role ARN for Karpenter's service account (IRSA), or set karpenter.installIfMissing=false." }}
+{{- end }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -61,16 +67,11 @@ spec:
               HELM_ARGS="--namespace $KARPENTER_NAMESPACE --create-namespace"
               HELM_ARGS="$HELM_ARGS --version $KARPENTER_VERSION"
               HELM_ARGS="$HELM_ARGS --set replicas=$KARPENTER_REPLICAS"
-
-              if [ -n "$CLUSTER_NAME" ]; then
-                HELM_ARGS="$HELM_ARGS --set settings.clusterName=$CLUSTER_NAME"
-              fi
+              HELM_ARGS="$HELM_ARGS --set settings.clusterName=$CLUSTER_NAME"
               if [ -n "$CLUSTER_ENDPOINT" ]; then
                 HELM_ARGS="$HELM_ARGS --set settings.clusterEndpoint=$CLUSTER_ENDPOINT"
               fi
-              if [ -n "$IAM_ROLE_ARN" ]; then
-                HELM_ARGS="$HELM_ARGS --set serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn=$IAM_ROLE_ARN"
-              fi
+              HELM_ARGS="$HELM_ARGS --set serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn=$IAM_ROLE_ARN"
 
               helm upgrade --install karpenter oci://public.ecr.aws/karpenter/karpenter $HELM_ARGS --wait
 
