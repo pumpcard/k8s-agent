@@ -60,7 +60,7 @@ func ResolveExportIDs(ctx context.Context, log *slog.Logger, metrics collector.C
 		log.Warn("skip export: cluster_id and account_id must be non-empty in body",
 			"cluster_id_empty", clusterIDBody == "",
 			"account_id_empty", accountIDBody == "",
-			"hint", "account_id comes from node providerID (GCP/Azure), node label (e.g. pump.co/account-id), or EC2 IMDS when on EKS")
+			"hint", "account_id comes from node providerID (GCP/Azure) or AWS_ROLE_ARN env var (EKS with IRSA)")
 		return "", "", false
 	}
 	return clusterIDBody, accountIDBody, true
