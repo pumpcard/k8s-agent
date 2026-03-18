@@ -1,8 +1,13 @@
 package aws
 
 import (
+	"context"
 	"os"
 	"strings"
+	"time"
+
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 
 	"k8s-agent/internal/cloud"
 )
@@ -41,22 +46,37 @@ func (Provider) AccountID(providerID string) string {
 	return ""
 }
 
-// AccountIDFromRoleARN extracts the AWS account ID from the AWS_ROLE_ARN
-// environment variable injected by IRSA (IAM Roles for Service Accounts).
-// ARN format: arn:aws:iam::123456789012:role/my-role — account is field 5.
-func AccountIDFromRoleARN() string {
-	arn := os.Getenv("AWS_ROLE_ARN")
-	if arn == "" {
-		return ""
-	}
-	parts := strings.Split(arn, ":")
-	if len(parts) >= 5 {
-		return parts[4]
-	}
-	return ""
-}
+const imdsTimeout = 2 * time.Second
 
-// AccountIDFromEnv returns the EKS_ACCOUNT_ID environment variable if set.
-func AccountIDFromEnv() string {
-	return strings.TrimSpace(os.Getenv("EKS_ACCOUNT_ID"))
+// ResolveAccountID tries multiple sources to discover the AWS account ID.
+// Priority: AWS_ROLE_ARN (IRSA) > EKS_ACCOUNT_ID env var > IMDS identity document.
+// Returns the account ID and the source it was resolved from, or empty strings if
+// all sources fail.
+func (Provider) ResolveAccountID(ctx context.Context) (accountID, source string) {
+	if arn := os.Getenv("AWS_ROLE_ARN"); arn != "" {
+		parts := strings.Split(arn, ":")
+		if len(parts) >= 5 && parts[4] != "" {
+			return parts[4], "AWS_ROLE_ARN"
+		}
+	}
+
+	if id := strings.TrimSpace(os.Getenv("EKS_ACCOUNT_ID")); id != "" {
+		return id, "EKS_ACCOUNT_ID"
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, imdsTimeout)
+	defer cancel()
+	cfg, err := awsconfig.LoadDefaultConfig(ctx)
+	if err != nil {
+		return "", ""
+	}
+	client := imds.NewFromConfig(cfg)
+	resp, err := client.GetInstanceIdentityDocument(ctx, &imds.GetInstanceIdentityDocumentInput{})
+	if err != nil {
+		return "", ""
+	}
+	if resp.AccountID != "" {
+		return resp.AccountID, "IMDS"
+	}
+	return "", ""
 }

@@ -1,6 +1,9 @@
 package cloud
 
-import "strings"
+import (
+	"context"
+	"strings"
+)
 
 // Provider parses cloud providerID to extract instance ID, zone, and optionally project/account ID.
 // Each cloud (AWS, GCP, Azure) implements this interface.
@@ -10,8 +13,14 @@ type Provider interface {
 	Parse(providerID string) (instanceID, zone string)
 	// ProjectID returns the cloud project ID when applicable (e.g. GCP). Empty for AWS/Azure.
 	ProjectID(providerID string) string
-	// AccountID returns the cloud account identifier: AWS account ID (if available), GCP project ID, or Azure subscription ID.
+	// AccountID extracts the account identifier from providerID when possible
+	// (GCP project, Azure subscription). Returns empty for providers like AWS
+	// where the providerID doesn't contain the account.
 	AccountID(providerID string) string
+	// ResolveAccountID attempts provider-specific discovery of the account ID
+	// when it can't be extracted from providerID (e.g. env vars, IMDS for AWS).
+	// Returns the account ID and the source it was resolved from, or empty strings.
+	ResolveAccountID(ctx context.Context) (accountID, source string)
 }
 
 // Registry holds cloud providers by prefix. Thread-safe for reads after init.
@@ -50,7 +59,7 @@ func ProjectID(providerID string) string {
 }
 
 // AccountID returns the cloud account identifier for the given providerID:
-// AWS account ID (empty from providerID; may be set via node labels), GCP project ID, or Azure subscription ID.
+// GCP project ID, Azure subscription ID. Empty for AWS (use ResolveAccountID).
 func AccountID(providerID string) string {
 	if providerID == "" {
 		return ""
@@ -61,6 +70,21 @@ func AccountID(providerID string) string {
 		}
 	}
 	return ""
+}
+
+// ResolveAccountID dispatches to the matching provider's ResolveAccountID for
+// provider-specific discovery (env vars, IMDS, etc.) when AccountID(providerID)
+// returns empty.
+func ResolveAccountID(ctx context.Context, providerID string) (accountID, source string) {
+	if providerID == "" {
+		return "", ""
+	}
+	for prefix, p := range registry {
+		if strings.HasPrefix(providerID, prefix) {
+			return p.ResolveAccountID(ctx)
+		}
+	}
+	return "", ""
 }
 
 // ZoneToRegion derives region from zone.
