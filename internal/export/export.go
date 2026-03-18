@@ -53,17 +53,9 @@ func GetExportIDs(ctx context.Context, metrics collector.ClusterMetricsPayload) 
 	return strings.TrimSpace(metrics.ClusterID), strings.TrimSpace(metrics.AccountID)
 }
 
-// ResolveExportIDs returns cluster_id and account_id for export; ok is false when either is empty (and logs a skip warning).
-func ResolveExportIDs(ctx context.Context, log *slog.Logger, metrics collector.ClusterMetricsPayload) (clusterIDBody, accountIDBody string, ok bool) {
-	clusterIDBody, accountIDBody = GetExportIDs(ctx, metrics)
-	if clusterIDBody == "" || accountIDBody == "" {
-		log.Warn("skip export: cluster_id and account_id must be non-empty in body",
-			"cluster_id_empty", clusterIDBody == "",
-			"account_id_empty", accountIDBody == "",
-			"hint", "account_id comes from node providerID (GCP/Azure) or AWS_ROLE_ARN env var (EKS with IRSA)")
-		return "", "", false
-	}
-	return clusterIDBody, accountIDBody, true
+// ResolveExportIDs returns cluster_id and account_id for export.
+func ResolveExportIDs(ctx context.Context, log *slog.Logger, metrics collector.ClusterMetricsPayload) (clusterIDBody, accountIDBody string) {
+	return GetExportIDs(ctx, metrics)
 }
 
 // Export sets cluster_id/account_id on metrics, re-marshals, logs, and sends to Pump. Caller must ensure IDs are non-empty.
@@ -98,10 +90,7 @@ func RunCycle(ctx context.Context, log *slog.Logger, client *kubernetes.Clientse
 	if !pumpCfg.Enabled {
 		return false, nil
 	}
-	clusterIDBody, accountIDBody, ok := ResolveExportIDs(ctx, log, payload.Metrics)
-	if !ok {
-		return false, nil
-	}
+	clusterIDBody, accountIDBody := ResolveExportIDs(ctx, log, payload.Metrics)
 	if err := Export(log, pumpCfg, pumpClient, clusterID, clusterIDBody, accountIDBody, &payload.Metrics); err != nil {
 		return false, err
 	}

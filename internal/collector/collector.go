@@ -361,19 +361,12 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string
 	clusterAccountID := ""
 	for _, node := range nodes.Items {
 		if id := cloud.AccountID(node.Spec.ProviderID); id != "" {
-			collectorLog.Info("account_id_from_provider_id", "node", node.Name, "account_id", id)
 			clusterAccountID = id
 			break
 		}
 	}
 	if clusterAccountID == "" && len(nodes.Items) > 0 {
-		id, source := cloud.ResolveAccountID(ctx, nodes.Items[0].Spec.ProviderID)
-		if id != "" {
-			collectorLog.Info("account_id_resolved", "source", source, "account_id", id)
-			clusterAccountID = id
-		} else {
-			collectorLog.Warn("account_id_empty", "hint", "set EKS_ACCOUNT_ID env var, configure IRSA (AWS_ROLE_ARN), set IMDS hop limit >= 2, or ensure providerID contains account info (GCP/Azure)")
-		}
+		clusterAccountID, _ = cloud.ResolveAccountID(ctx, nodes.Items[0].Spec.ProviderID)
 	}
 
 	zeroQuantity := resource.MustParse("0")
