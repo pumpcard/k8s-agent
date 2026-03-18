@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -11,6 +12,8 @@ import (
 
 	"k8s-agent/internal/cloud"
 )
+
+var log = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 func init() {
 	cloud.Register(&Provider{})
@@ -53,30 +56,38 @@ const imdsTimeout = 2 * time.Second
 // Returns the account ID and the source it was resolved from, or empty strings if
 // all sources fail.
 func (Provider) ResolveAccountID(ctx context.Context) (accountID, source string) {
-	if arn := os.Getenv("AWS_ROLE_ARN"); arn != "" {
+	arn := os.Getenv("AWS_ROLE_ARN")
+	log.Info("aws_resolve_account_id", "step", "AWS_ROLE_ARN", "value", arn)
+	if arn != "" {
 		parts := strings.Split(arn, ":")
 		if len(parts) >= 5 && parts[4] != "" {
 			return parts[4], "AWS_ROLE_ARN"
 		}
 	}
 
-	if id := strings.TrimSpace(os.Getenv("EKS_ACCOUNT_ID")); id != "" {
+	eksID := os.Getenv("EKS_ACCOUNT_ID")
+	log.Info("aws_resolve_account_id", "step", "EKS_ACCOUNT_ID", "value", eksID)
+	if id := strings.TrimSpace(eksID); id != "" {
 		return id, "EKS_ACCOUNT_ID"
 	}
 
+	log.Info("aws_resolve_account_id", "step", "IMDS", "status", "attempting")
 	ctx, cancel := context.WithTimeout(ctx, imdsTimeout)
 	defer cancel()
 	cfg, err := awsconfig.LoadDefaultConfig(ctx)
 	if err != nil {
+		log.Warn("aws_resolve_account_id", "step", "IMDS", "status", "config_failed", "error", err)
 		return "", ""
 	}
 	client := imds.NewFromConfig(cfg)
 	resp, err := client.GetInstanceIdentityDocument(ctx, &imds.GetInstanceIdentityDocumentInput{})
 	if err != nil {
+		log.Warn("aws_resolve_account_id", "step", "IMDS", "status", "failed", "error", err)
 		return "", ""
 	}
 	if resp.AccountID != "" {
 		return resp.AccountID, "IMDS"
 	}
+	log.Warn("aws_resolve_account_id", "step", "IMDS", "status", "empty_account_id")
 	return "", ""
 }
