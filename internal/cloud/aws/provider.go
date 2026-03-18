@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"os"
 	"strings"
 
 	"k8s-agent/internal/cloud"
@@ -36,7 +37,21 @@ func (Provider) ProjectID(providerID string) string {
 }
 
 // AccountID returns empty string; AWS providerID does not include account ID.
-// Account ID can be set via node labels (e.g. custom label) or obtained from instance metadata.
 func (Provider) AccountID(providerID string) string {
+	return ""
+}
+
+// AccountIDFromRoleARN extracts the AWS account ID from the AWS_ROLE_ARN
+// environment variable injected by IRSA (IAM Roles for Service Accounts).
+// ARN format: arn:aws:iam::123456789012:role/my-role — account is field 5.
+func AccountIDFromRoleARN() string {
+	arn := os.Getenv("AWS_ROLE_ARN")
+	if arn == "" {
+		return ""
+	}
+	parts := strings.Split(arn, ":")
+	if len(parts) >= 5 {
+		return parts[4]
+	}
 	return ""
 }

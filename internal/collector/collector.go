@@ -4,13 +4,13 @@ import (
 	"context"
 	"log/slog"
 	"os"
-	"strings"
 	"time"
 
 	"k8s-agent/internal/cloud"
 	"k8s-agent/internal/cloud/aws"
 	_ "k8s-agent/internal/cloud/azure"
 	_ "k8s-agent/internal/cloud/gcp"
+	"k8s-agent/internal/clusterid"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -22,11 +22,12 @@ import (
 var collectorLog = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 type ClusterMetricsPayload struct {
-	ClusterID string            `json:"cluster_id"`
-	Timestamp string            `json:"timestamp"`
-	Nodes     []NodeMetrics     `json:"nodes"`
-	AccountID string            `json:"account_id"` // Cloud account ID (AWS account, GCP project, or Azure subscription)
-	Karpenter *KarpenterMetrics `json:"karpenter,omitempty"`
+	ClusterID   string            `json:"cluster_id"`
+	ClusterName string            `json:"cluster_name,omitempty"`
+	Timestamp   string            `json:"timestamp"`
+	Nodes       []NodeMetrics     `json:"nodes"`
+	AccountID   string            `json:"account_id"` // Cloud account ID (AWS account, GCP project, or Azure subscription)
+	Karpenter   *KarpenterMetrics `json:"karpenter,omitempty"`
 }
 
 // ResourceMetrics matches API: both string quantities and numeric fields required.
@@ -128,17 +129,11 @@ func nodeCloudInfo(node *corev1.Node) (provider, instanceType, instanceID, zone,
 	return provider, instanceType, instanceID, zone, region
 }
 
-// nodeAccountID returns the cloud account ID for a node (used to derive the cluster account_id).
-// From providerID: GCP project, Azure subscription. For AWS, uses node label pump.co/account-id when set.
+// nodeAccountID returns the cloud account ID for a node.
+// From providerID: GCP project, Azure subscription. Returns empty for AWS
+// (AWS account ID is resolved separately via AWS_ROLE_ARN).
 func nodeAccountID(node *corev1.Node) string {
-	accountID := cloud.AccountID(node.Spec.ProviderID)
-	if accountID != "" {
-		return accountID
-	}
-	if node.Labels != nil && node.Labels["pump.co/account-id"] != "" {
-		return node.Labels["pump.co/account-id"]
-	}
-	return ""
+	return cloud.AccountID(node.Spec.ProviderID)
 }
 
 func nodeConditionsFromK8s(conditions []corev1.NodeCondition) []NodeCondition {
@@ -377,14 +372,7 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string
 		}
 	}
 	if clusterAccountID == "" {
-		for _, node := range nodes.Items {
-			if strings.HasPrefix(node.Spec.ProviderID, "aws://") {
-				if id := aws.AccountIDFromIMDS(ctx); id != "" {
-					clusterAccountID = id
-				}
-				break
-			}
-		}
+		clusterAccountID = aws.AccountIDFromRoleARN()
 	}
 
 	zeroQuantity := resource.MustParse("0")
@@ -431,10 +419,11 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string
 	}
 
 	payload := ClusterMetricsPayload{
-		ClusterID: clusterID,
-		Timestamp: ts,
-		Nodes:     nodeList,
-		AccountID: clusterAccountID,
+		ClusterID:   clusterID,
+		ClusterName: clusterid.ResolveName(nodes.Items),
+		Timestamp:   ts,
+		Nodes:       nodeList,
+		AccountID:   clusterAccountID,
 	}
 	for _, node := range payload.Nodes {
 		collectorLog.Debug("payload_node",
