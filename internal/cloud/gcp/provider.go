@@ -1,6 +1,7 @@
 package gcp
 
 import (
+	"context"
 	"strings"
 
 	"k8s-agent/internal/cloud"
@@ -44,3 +45,5 @@ func (Provider) ProjectID(providerID string) string {
 func (p Provider) AccountID(providerID string) string {
 	return p.ProjectID(providerID)
 }
+
+func (Provider) ResolveAccountID(_ context.Context) (string, string) { return "", "" }

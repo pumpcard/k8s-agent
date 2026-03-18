@@ -1,6 +1,7 @@
 package azure
 
 import (
+	"context"
 	"strings"
 
 	"k8s-agent/internal/cloud"
@@ -46,3 +47,5 @@ func (Provider) AccountID(providerID string) string {
 	}
 	return ""
 }
+
+func (Provider) ResolveAccountID(_ context.Context) (string, string) { return "", "" }

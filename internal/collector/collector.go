@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"k8s-agent/internal/cloud"
-	"k8s-agent/internal/cloud/aws"
+	_ "k8s-agent/internal/cloud/aws"
 	_ "k8s-agent/internal/cloud/azure"
 	_ "k8s-agent/internal/cloud/gcp"
 	"k8s-agent/internal/clusterid"
@@ -129,12 +129,6 @@ func nodeCloudInfo(node *corev1.Node) (provider, instanceType, instanceID, zone,
 	return provider, instanceType, instanceID, zone, region
 }
 
-// nodeAccountID returns the cloud account ID for a node.
-// From providerID: GCP project, Azure subscription. Returns empty for AWS
-// (AWS account ID is resolved separately via AWS_ROLE_ARN).
-func nodeAccountID(node *corev1.Node) string {
-	return cloud.AccountID(node.Spec.ProviderID)
-}
 
 func nodeConditionsFromK8s(conditions []corev1.NodeCondition) []NodeCondition {
 	out := make([]NodeCondition, 0, len(conditions))
@@ -366,24 +360,20 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string
 
 	clusterAccountID := ""
 	for _, node := range nodes.Items {
-		if id := nodeAccountID(&node); id != "" {
-			collectorLog.Info("account_id_from_provider", "node", node.Name, "provider_id", node.Spec.ProviderID, "account_id", id)
+		if id := cloud.AccountID(node.Spec.ProviderID); id != "" {
+			collectorLog.Info("account_id_from_provider_id", "node", node.Name, "account_id", id)
 			clusterAccountID = id
 			break
 		}
 	}
-	if clusterAccountID == "" {
-		arnID := aws.AccountIDFromRoleARN()
-		collectorLog.Info("account_id_from_role_arn", "AWS_ROLE_ARN", os.Getenv("AWS_ROLE_ARN"), "account_id", arnID)
-		clusterAccountID = arnID
-	}
-	if clusterAccountID == "" {
-		envID := aws.AccountIDFromEnv()
-		collectorLog.Info("account_id_from_env", "EKS_ACCOUNT_ID", envID)
-		clusterAccountID = envID
-	}
-	if clusterAccountID == "" {
-		collectorLog.Warn("account_id_empty", "hint", "set EKS_ACCOUNT_ID env var, or configure IRSA (AWS_ROLE_ARN), or ensure providerID contains account info (GCP/Azure)")
+	if clusterAccountID == "" && len(nodes.Items) > 0 {
+		id, source := cloud.ResolveAccountID(ctx, nodes.Items[0].Spec.ProviderID)
+		if id != "" {
+			collectorLog.Info("account_id_resolved", "source", source, "account_id", id)
+			clusterAccountID = id
+		} else {
+			collectorLog.Warn("account_id_empty", "hint", "set EKS_ACCOUNT_ID env var, configure IRSA (AWS_ROLE_ARN), set IMDS hop limit >= 2, or ensure providerID contains account info (GCP/Azure)")
+		}
 	}
 
 	zeroQuantity := resource.MustParse("0")
