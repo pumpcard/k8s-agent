@@ -367,14 +367,14 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string
 	clusterAccountID := ""
 	for _, node := range nodes.Items {
 		if id := nodeAccountID(&node); id != "" {
-			collectorLog.Debug("account_id_from_provider", "node", node.Name, "provider_id", node.Spec.ProviderID, "account_id", id)
+			collectorLog.Info("account_id_from_provider", "node", node.Name, "provider_id", node.Spec.ProviderID, "account_id", id)
 			clusterAccountID = id
 			break
 		}
 	}
 	if clusterAccountID == "" {
 		arnID := aws.AccountIDFromRoleARN()
-		collectorLog.Debug("account_id_from_role_arn", "AWS_ROLE_ARN", os.Getenv("AWS_ROLE_ARN"), "account_id", arnID)
+		collectorLog.Info("account_id_from_role_arn", "AWS_ROLE_ARN", os.Getenv("AWS_ROLE_ARN"), "account_id", arnID)
 		clusterAccountID = arnID
 	}
 	if clusterAccountID == "" {
