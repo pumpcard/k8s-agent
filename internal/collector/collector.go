@@ -378,7 +378,12 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string
 		clusterAccountID = arnID
 	}
 	if clusterAccountID == "" {
-		collectorLog.Warn("account_id_empty", "hint", "set AWS_ROLE_ARN via IRSA or ensure providerID contains account info (GCP/Azure)")
+		envID := aws.AccountIDFromEnv()
+		collectorLog.Info("account_id_from_env", "EKS_ACCOUNT_ID", envID)
+		clusterAccountID = envID
+	}
+	if clusterAccountID == "" {
+		collectorLog.Warn("account_id_empty", "hint", "set EKS_ACCOUNT_ID env var, or configure IRSA (AWS_ROLE_ARN), or ensure providerID contains account info (GCP/Azure)")
 	}
 
 	zeroQuantity := resource.MustParse("0")
