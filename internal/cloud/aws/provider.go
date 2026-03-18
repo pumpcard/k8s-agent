@@ -55,3 +55,8 @@ func AccountIDFromRoleARN() string {
 	}
 	return ""
 }
+
+// AccountIDFromEnv returns the EKS_ACCOUNT_ID environment variable if set.
+func AccountIDFromEnv() string {
+	return strings.TrimSpace(os.Getenv("EKS_ACCOUNT_ID"))
+}
