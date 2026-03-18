@@ -367,12 +367,18 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string
 	clusterAccountID := ""
 	for _, node := range nodes.Items {
 		if id := nodeAccountID(&node); id != "" {
+			collectorLog.Debug("account_id_from_provider", "node", node.Name, "provider_id", node.Spec.ProviderID, "account_id", id)
 			clusterAccountID = id
 			break
 		}
 	}
 	if clusterAccountID == "" {
-		clusterAccountID = aws.AccountIDFromRoleARN()
+		arnID := aws.AccountIDFromRoleARN()
+		collectorLog.Debug("account_id_from_role_arn", "AWS_ROLE_ARN", os.Getenv("AWS_ROLE_ARN"), "account_id", arnID)
+		clusterAccountID = arnID
+	}
+	if clusterAccountID == "" {
+		collectorLog.Warn("account_id_empty", "hint", "set AWS_ROLE_ARN via IRSA or ensure providerID contains account info (GCP/Azure)")
 	}
 
 	zeroQuantity := resource.MustParse("0")
