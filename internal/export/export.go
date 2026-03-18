@@ -66,11 +66,11 @@ func Export(log *slog.Logger, pumpCfg pump.Config, pumpClient *pump.Client, clus
 	if err != nil {
 		return err
 	}
-	log.Debug("export payload",
+	log.Info("export payload",
 		"cluster_id", metrics.ClusterID,
 		"account_id", metrics.AccountID,
 		"payload_bytes", len(jsonData),
-		"payload_preview", truncateForLog(string(jsonData), payloadPreviewLen))
+		"payload_json", string(jsonData))
 	log.Info("exporting", "endpoint", pumpCfg.Endpoint)
 	return pumpClient.Send(pumpCfg.Endpoint, clusterID, jsonData)
 }
