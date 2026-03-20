@@ -66,12 +66,7 @@ func Export(log *slog.Logger, pumpCfg pump.Config, pumpClient *pump.Client, clus
 	if err != nil {
 		return err
 	}
-	log.Info("export payload",
-		"cluster_id", metrics.ClusterID,
-		"account_id", metrics.AccountID,
-		"payload_bytes", len(jsonData),
-		"payload_json", string(jsonData))
-	log.Info("exporting", "endpoint", pumpCfg.Endpoint)
+
 	return pumpClient.Send(pumpCfg.Endpoint, clusterID, jsonData)
 }
 
@@ -82,10 +77,9 @@ func RunCycle(ctx context.Context, log *slog.Logger, client *kubernetes.Clientse
 	if err != nil {
 		return false, err
 	}
-	log.Info("payload", "bytes", len(payload.JSON), "nodes", len(payload.Metrics.Nodes), "pods", totalPods(&payload.Metrics))
 
 	karpenterMetrics := collector.CollectKarpenter(ctx, client, dynClient, clusterID)
-	log.Info("karpenter collection", "events", len(karpenterMetrics.Events), "node_pools", len(karpenterMetrics.NodePools))
+
 	payload.Metrics.Karpenter = karpenterMetrics
 
 	if !pumpCfg.Enabled {
