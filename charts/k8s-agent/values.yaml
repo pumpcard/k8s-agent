@@ -71,9 +71,17 @@ metricsExport:
   endpoint: "https://api.pump.co/metrics-ingestion/cluster-metrics"
   timeoutSeconds: 90
 
-# Auth0: pass via --set auth0.clientId=xxx --set auth0.clientSecret=xxx
-# Agent uses these to fetch Bearer token from Auth0 for the ingestion API
+# Auth0: credentials for Bearer token used by the ingestion API.
+# Option 1: Pass credentials via --set (Helm creates the Secret automatically):
+#   helm install k8s-agent ./charts/k8s-agent \
+#     --set auth0.clientId=xxx --set auth0.clientSecret=xxx
+# Option 2: Pre-create a Secret and reference it (e.g. via ESO, Vault, etc.):
+#   helm install k8s-agent ./charts/k8s-agent \
+#     --set auth0.existingSecret=my-auth0-secret
 auth0:
   enabled: true
+  # existingSecret: ""  # Name of a pre-existing Secret containing AUTH0_CLIENT_ID and AUTH0_CLIENT_SECRET
+  # clientId: ""         # Only used when existingSecret is not set
+  # clientSecret: ""     # Only used when existingSecret is not set
 
 env: []
