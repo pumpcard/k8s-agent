@@ -18,6 +18,10 @@ spec:
       labels:
         {{- include "k8s-agent.selectorLabels" . | nindent 8 }}
         component: cluster
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       {{- with .Values.nodeSelector }}
       nodeSelector:
