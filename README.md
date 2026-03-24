@@ -44,6 +44,31 @@ kubectl logs -f deployment/k8s-agent-cluster -n k8s-agent
 kubectl logs -f daemonset/k8s-agent-node -n k8s-agent
 ```
 
+## Authentication
+
+The agent needs Auth0 credentials (`AUTH0_CLIENT_ID` and `AUTH0_CLIENT_SECRET`) to fetch a Bearer token for the ingestion API. There are two ways to provide them:
+
+### Option 1: Pass directly via Helm (Helm creates a K8s Secret)
+
+```bash
+helm upgrade --install k8s-agent ./charts/k8s-agent \
+  --namespace k8s-agent --create-namespace \
+  --set auth0.clientId="YOUR_CLIENT_ID" \
+  --set auth0.clientSecret="YOUR_CLIENT_SECRET"
+```
+
+### Option 2: Use a pre-existing Secret (for ESO, Vault, etc.)
+
+If you already have a Kubernetes Secret containing `AUTH0_CLIENT_ID` and `AUTH0_CLIENT_SECRET` keys, reference it during install:
+
+```bash
+helm upgrade --install k8s-agent ./charts/k8s-agent \
+  --namespace k8s-agent --create-namespace \
+  --set auth0.existingSecret=my-auth0-secret
+```
+
+This is the recommended approach for production. The secret can be managed by [External Secrets Operator](https://external-secrets.io/), HashiCorp Vault, or any tool that syncs secrets into Kubernetes.
+
 ## Configuration
 
 You can customize the deployment by overriding values:
