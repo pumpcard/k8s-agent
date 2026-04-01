@@ -79,8 +79,10 @@ func RunCycle(ctx context.Context, log *slog.Logger, client *kubernetes.Clientse
 	}
 
 	karpenterMetrics := collector.CollectKarpenter(ctx, client, dynClient, clusterID)
-
 	payload.Metrics.Karpenter = karpenterMetrics
+
+	hpaMetrics := collector.CollectHPAs(ctx, client, clusterID)
+	payload.Metrics.HPAs = hpaMetrics
 
 	if !pumpCfg.Enabled {
 		return false, nil
