@@ -25,13 +25,10 @@ type HPAMetricTarget struct {
 type HPAInfo struct {
 	Namespace       string            `json:"namespace"`
 	Name            string            `json:"name"`
-	Generation      int64             `json:"generation"`
 	TargetKind      string            `json:"target_kind"`
 	TargetName      string            `json:"target_name"`
 	MinReplicas     *int32            `json:"min_replicas,omitempty"`
 	MaxReplicas     int32             `json:"max_replicas"`
-	CurrentReplicas int32             `json:"current_replicas"`
-	DesiredReplicas int32             `json:"desired_replicas"`
 	MetricTargets   []HPAMetricTarget `json:"metric_targets,omitempty"`
 }
 
@@ -60,13 +57,10 @@ func CollectHPAs(ctx context.Context, client kubernetes.Interface, clusterID str
 		info := HPAInfo{
 			Namespace:       hpa.Namespace,
 			Name:            hpa.Name,
-			Generation:      hpa.Generation,
 			TargetKind:      hpa.Spec.ScaleTargetRef.Kind,
 			TargetName:      hpa.Spec.ScaleTargetRef.Name,
 			MinReplicas:     hpa.Spec.MinReplicas,
 			MaxReplicas:     hpa.Spec.MaxReplicas,
-			CurrentReplicas: hpa.Status.CurrentReplicas,
-			DesiredReplicas: hpa.Status.DesiredReplicas,
 			MetricTargets:   extractMetricTargets(hpa.Spec.Metrics),
 		}
 
