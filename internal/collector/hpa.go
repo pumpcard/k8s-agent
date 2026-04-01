@@ -3,16 +3,12 @@ package collector
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"os"
 	"time"
 
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
-
-var hpaLog = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 type HPAMetricTarget struct {
 	Type               string `json:"type"`
@@ -48,7 +44,6 @@ func CollectHPAs(ctx context.Context, client kubernetes.Interface, clusterID str
 
 	hpaList, err := client.AutoscalingV2().HorizontalPodAutoscalers("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		hpaLog.Warn("hpa_list_failed", "error", err)
 		return metrics
 	}
 
@@ -64,17 +59,9 @@ func CollectHPAs(ctx context.Context, client kubernetes.Interface, clusterID str
 			MetricTargets:   extractMetricTargets(hpa.Spec.Metrics),
 		}
 
-		hpaLog.Debug("hpa_collected",
-			"namespace", info.Namespace,
-			"name", info.Name,
-			"target", info.TargetKind+"/"+info.TargetName,
-			"min", info.MinReplicas,
-			"max", info.MaxReplicas,
-		)
 		metrics.HPAs = append(metrics.HPAs, info)
 	}
 
-	hpaLog.Info("hpas_collected", "count", len(metrics.HPAs))
 	return metrics
 }
 
