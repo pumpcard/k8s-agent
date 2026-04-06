@@ -130,7 +130,6 @@ func nodeCloudInfo(node *corev1.Node) (provider, instanceType, instanceID, zone,
 	return provider, instanceType, instanceID, zone, region
 }
 
-
 func nodeConditionsFromK8s(conditions []corev1.NodeCondition) []NodeCondition {
 	out := make([]NodeCondition, 0, len(conditions))
 	for _, condition := range conditions {
@@ -158,12 +157,66 @@ func podReady(conditions []corev1.PodCondition) bool {
 	return false
 }
 
-func podOwnerRef(owners []metav1.OwnerReference) *string {
+// controllerOwner returns the controlling owner reference, or the first owner if none is marked controller.
+func controllerOwner(owners []metav1.OwnerReference) *metav1.OwnerReference {
+	for i := range owners {
+		if owners[i].Controller != nil && *owners[i].Controller {
+			return &owners[i]
+		}
+	}
 	if len(owners) == 0 {
 		return nil
 	}
-	ownerReferenceString := owners[0].Kind + "/" + owners[0].Name
-	return &ownerReferenceString
+	return &owners[0]
+}
+
+// replicaSetToDeployment maps "namespace/replicasetName" -> deployment name when the RS is owned by a Deployment.
+func replicaSetToDeploymentMap(ctx context.Context, client *kubernetes.Clientset) map[string]string {
+	out := make(map[string]string)
+	rsList, err := client.AppsV1().ReplicaSets("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		collectorLog.Warn("replicasets_list_failed", "error", err)
+		return out
+	}
+	for i := range rsList.Items {
+		rs := &rsList.Items[i]
+		key := rs.Namespace + "/" + rs.Name
+		var deployName string
+		for j := range rs.OwnerReferences {
+			ref := rs.OwnerReferences[j]
+			if ref.Kind != "Deployment" {
+				continue
+			}
+			if ref.Controller != nil && *ref.Controller {
+				deployName = ref.Name
+				break
+			}
+			if deployName == "" {
+				deployName = ref.Name
+			}
+		}
+		if deployName != "" {
+			out[key] = deployName
+		}
+	}
+	return out
+}
+
+// podWorkloadOwner reports the logical workload owner: Deployment for pods under a Deployment (via ReplicaSet),
+// otherwise the controller owner kind/name (e.g. StatefulSet, DaemonSet, Job).
+func podWorkloadOwner(owners []metav1.OwnerReference, namespace string, rsToDeploy map[string]string) *string {
+	ctrl := controllerOwner(owners)
+	if ctrl == nil {
+		return nil
+	}
+	if ctrl.Kind == "ReplicaSet" {
+		if deployName := rsToDeploy[namespace+"/"+ctrl.Name]; deployName != "" {
+			s := "Deployment/" + deployName
+			return &s
+		}
+	}
+	s := ctrl.Kind + "/" + ctrl.Name
+	return &s
 }
 
 func containerState(state *corev1.ContainerState) string {
@@ -260,6 +313,8 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string
 	}
 	collectorLog.Debug("pods_listed", "count", len(pods.Items))
 
+	rsToDeploy := replicaSetToDeploymentMap(ctx, client)
+
 	nodeUsageMap := make(map[string]resourceUsage)
 	podUsageMap := make(map[string]resourceUsage)
 	if metricsClient != nil {
@@ -273,9 +328,6 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string
 					cpuMilli: quantityToMilli(nodeMetrics.Usage[corev1.ResourceCPU]),
 					memBytes: quantityToBytes(nodeMetrics.Usage[corev1.ResourceMemory]),
 				}
-			}
-			for nodeName, usage := range nodeUsageMap {
-				collectorLog.Debug("node_usage", "node", nodeName, "cpu_millicores", usage.cpuMilli, "memory_bytes", usage.memBytes)
 			}
 		}
 		podMetricsList, err := metricsClient.MetricsV1beta1().PodMetricses("").List(ctx, metav1.ListOptions{})
@@ -342,7 +394,7 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string
 			Limits:         resourceMetricsFromQuantities(*limitCPUQuantity, *limitMemoryQuantity),
 			Usage:          nil,
 			Labels:         labels,
-			OwnerReference: podOwnerRef(pod.OwnerReferences),
+			OwnerReference: podWorkloadOwner(pod.OwnerReferences, pod.Namespace, rsToDeploy),
 		}
 		if usage, ok := podUsageMap[pod.Namespace+"/"+pod.Name]; ok {
 			usageCPUQuantity := resource.NewMilliQuantity(usage.cpuMilli, resource.DecimalSI)
@@ -392,24 +444,24 @@ func Collect(ctx context.Context, client *kubernetes.Clientset, clusterID string
 			usageMem = *resource.NewQuantity(nodeUsage.memBytes, resource.BinarySI)
 		}
 		nodeList = append(nodeList, NodeMetrics{
-			Name:          node.Name,
-			Architecture:  nodeInfo.Architecture,
+			Name:           node.Name,
+			Architecture:   nodeInfo.Architecture,
 			KubeletVersion: nodeInfo.KubeletVersion,
-			OSImage:       nodeInfo.OSImage,
-			Provider:      provider,
-			InstanceType:  instanceType,
-			InstanceID:    instanceID,
-			Zone:          zone,
-			Region:        region,
-			ProjectID:     cloud.ProjectID(node.Spec.ProviderID),
-			CapacityType:  node.Labels["karpenter.sh/capacity-type"],
-			NodePoolName:  node.Labels["karpenter.sh/nodepool"],
-			NodeClaimName: node.Labels["karpenter.sh/nodeclaim"],
-			Capacity:      resourceMetricsFromQuantities(capacityCPU, capacityMemory),
-			Allocatable:   resourceMetricsFromQuantities(allocatableCPU, allocatableMemory),
-			Usage:         resourceMetricsFromQuantities(usageCPU, usageMem),
-			Conditions:    nodeConditionsFromK8s(node.Status.Conditions),
-			Pods:          nodePods,
+			OSImage:        nodeInfo.OSImage,
+			Provider:       provider,
+			InstanceType:   instanceType,
+			InstanceID:     instanceID,
+			Zone:           zone,
+			Region:         region,
+			ProjectID:      cloud.ProjectID(node.Spec.ProviderID),
+			CapacityType:   node.Labels["karpenter.sh/capacity-type"],
+			NodePoolName:   node.Labels["karpenter.sh/nodepool"],
+			NodeClaimName:  node.Labels["karpenter.sh/nodeclaim"],
+			Capacity:       resourceMetricsFromQuantities(capacityCPU, capacityMemory),
+			Allocatable:    resourceMetricsFromQuantities(allocatableCPU, allocatableMemory),
+			Usage:          resourceMetricsFromQuantities(usageCPU, usageMem),
+			Conditions:     nodeConditionsFromK8s(node.Status.Conditions),
+			Pods:           nodePods,
 		})
 	}
 
