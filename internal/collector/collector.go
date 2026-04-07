@@ -75,6 +75,10 @@ type ContainerInfo struct {
 	State        string  `json:"state"` // running | waiting | terminated | pending
 	Reason       *string `json:"reason,omitempty"`
 	Message      *string `json:"message,omitempty"`
+	LastState    *string `json:"last_state,omitempty"`    // terminated | nil (only set when last termination info exists)
+	LastReason   *string `json:"last_reason,omitempty"`   // e.g. "OOMKilled", "Error"
+	LastExitCode *int32  `json:"last_exit_code,omitempty"`
+	LastMessage  *string `json:"last_message,omitempty"`
 }
 
 type PodSummary struct {
@@ -252,6 +256,15 @@ func containerInfoFromStatus(spec corev1.Container, status *corev1.ContainerStat
 		if status.State.Terminated != nil {
 			containerInfo.Reason = &status.State.Terminated.Reason
 			containerInfo.Message = &status.State.Terminated.Message
+		}
+		if last := status.LastTerminationState.Terminated; last != nil {
+			state := "terminated"
+			containerInfo.LastState = &state
+			containerInfo.LastReason = &last.Reason
+			containerInfo.LastExitCode = &last.ExitCode
+			if last.Message != "" {
+				containerInfo.LastMessage = &last.Message
+			}
 		}
 	}
 	return containerInfo
