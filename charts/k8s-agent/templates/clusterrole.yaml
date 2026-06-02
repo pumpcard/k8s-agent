@@ -41,3 +41,7 @@ rules:
   - apiGroups: ["karpenter.sh"]
     resources: ["nodeclaims", "nodepools"]
     verbs: ["get", "list", "watch"]
+  # Read KEDA CRDs for autoscaling metrics
+  - apiGroups: ["keda.sh"]
+    resources: ["scaledobjects"]
+    verbs: ["get", "list", "watch"]

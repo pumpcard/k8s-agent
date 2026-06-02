@@ -29,6 +29,7 @@ type ClusterMetricsPayload struct {
 	AccountID   string            `json:"account_id"` // Cloud account ID (AWS account, GCP project, or Azure subscription)
 	Karpenter   *KarpenterMetrics `json:"karpenter,omitempty"`
 	HPAs        *HPAMetrics       `json:"hpas,omitempty"`
+	KEDA        *KEDAMetrics      `json:"keda,omitempty"`
 }
 
 // ResourceMetrics matches API: both string quantities and numeric fields required.
