@@ -22,14 +22,22 @@ type HPAMetricTarget struct {
 	TargetValue        string `json:"target_value,omitempty"`
 }
 
+type HPAOwnerReference struct {
+	APIVersion string `json:"api_version"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+	UID        string `json:"uid,omitempty"`
+}
+
 type HPAInfo struct {
-	Namespace       string            `json:"namespace"`
-	Name            string            `json:"name"`
-	TargetKind      string            `json:"target_kind"`
-	TargetName      string            `json:"target_name"`
-	MinReplicas     *int32            `json:"min_replicas,omitempty"`
-	MaxReplicas     int32             `json:"max_replicas"`
-	MetricTargets   []HPAMetricTarget `json:"metric_targets,omitempty"`
+	Namespace       string             `json:"namespace"`
+	Name            string             `json:"name"`
+	TargetKind      string             `json:"target_kind"`
+	TargetName      string             `json:"target_name"`
+	MinReplicas     *int32             `json:"min_replicas,omitempty"`
+	MaxReplicas     int32              `json:"max_replicas"`
+	MetricTargets   []HPAMetricTarget  `json:"metric_targets,omitempty"`
+	OwnerReferences []HPAOwnerReference `json:"owner_references,omitempty"`
 }
 
 type HPAMetrics struct {
@@ -62,6 +70,7 @@ func CollectHPAs(ctx context.Context, client kubernetes.Interface, clusterID str
 			MinReplicas:     hpa.Spec.MinReplicas,
 			MaxReplicas:     hpa.Spec.MaxReplicas,
 			MetricTargets:   extractMetricTargets(hpa.Spec.Metrics),
+			OwnerReferences: extractOwnerReferences(hpa.OwnerReferences),
 		}
 
 		hpaLog.Debug("hpa_collected",
@@ -76,6 +85,23 @@ func CollectHPAs(ctx context.Context, client kubernetes.Interface, clusterID str
 
 	hpaLog.Info("hpas_collected", "count", len(metrics.HPAs))
 	return metrics
+}
+
+func extractOwnerReferences(refs []metav1.OwnerReference) []HPAOwnerReference {
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]HPAOwnerReference, 0, len(refs))
+	for i := range refs {
+		ref := &refs[i]
+		out = append(out, HPAOwnerReference{
+			APIVersion: ref.APIVersion,
+			Kind:       ref.Kind,
+			Name:       ref.Name,
+			UID:        string(ref.UID),
+		})
+	}
+	return out
 }
 
 func extractMetricTargets(specs []autoscalingv2.MetricSpec) []HPAMetricTarget {
