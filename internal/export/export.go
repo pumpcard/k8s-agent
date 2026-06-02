@@ -84,6 +84,9 @@ func RunCycle(ctx context.Context, log *slog.Logger, client *kubernetes.Clientse
 	hpaMetrics := collector.CollectHPAs(ctx, client, clusterID)
 	payload.Metrics.HPAs = hpaMetrics
 
+	kedaMetrics := collector.CollectScaledObjects(ctx, dynClient, clusterID)
+	payload.Metrics.KEDA = kedaMetrics
+
 	if !pumpCfg.Enabled {
 		return false, nil
 	}
