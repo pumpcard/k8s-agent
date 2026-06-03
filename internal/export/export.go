@@ -80,12 +80,12 @@ func logScaledObjects(log *slog.Logger, keda *collector.KEDAMetrics) {
 	log.Info("scaledobjects_before_export", "count", len(keda.ScaledObjects))
 	for i := range keda.ScaledObjects {
 		so := keda.ScaledObjects[i]
-		log.Info("scaledobject_before_export",
-			"namespace", so.Namespace,
-			"name", so.Name,
-			"target", so.TargetKind+"/"+so.TargetName,
-			"triggers", len(so.Triggers),
-		)
+		soJSON, err := json.Marshal(so)
+		if err != nil {
+			log.Error("scaledobject_marshal_failed", "namespace", so.Namespace, "name", so.Name, "error", err)
+			continue
+		}
+		log.Info("scaledobject_before_export", "object", string(soJSON))
 	}
 }
 
