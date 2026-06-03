@@ -2,6 +2,7 @@ package collector
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"time"
@@ -17,11 +18,17 @@ var kedaLog = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level
 type ScaledObjectTrigger struct {
 	Type string `json:"type"`
 	Name string `json:"name,omitempty"`
+	// MetricType is the trigger's metric target type: Utilization, Value, or AverageValue.
+	MetricType string `json:"metric_type,omitempty"`
+	// Metadata holds the trigger configuration, including the scaling thresholds
+	// (e.g. "value" for cpu/memory, "threshold"/"query" for prometheus).
+	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
 type ScaledObjectInfo struct {
 	Namespace        string                `json:"namespace"`
 	Name             string                `json:"name"`
+	UID              string                `json:"uid,omitempty"`
 	TargetKind       string                `json:"target_kind,omitempty"`
 	TargetName       string                `json:"target_name,omitempty"`
 	TargetAPIVersion string                `json:"target_api_version,omitempty"`
@@ -79,6 +86,7 @@ func scaledObjectFromUnstructured(obj *unstructured.Unstructured) ScaledObjectIn
 	info := ScaledObjectInfo{
 		Namespace: obj.GetNamespace(),
 		Name:      obj.GetName(),
+		UID:       string(obj.GetUID()),
 	}
 
 	if kind, ok, _ := unstructured.NestedString(obj.Object, "spec", "scaleTargetRef", "kind"); ok {
@@ -111,9 +119,36 @@ func scaledObjectFromUnstructured(obj *unstructured.Unstructured) ScaledObjectIn
 			if name, ok, _ := unstructured.NestedString(triggerMap, "name"); ok {
 				trigger.Name = name
 			}
+			if metricType, ok, _ := unstructured.NestedString(triggerMap, "metricType"); ok {
+				trigger.MetricType = metricType
+			}
+			if metadata, ok, _ := unstructured.NestedMap(triggerMap, "metadata"); ok {
+				trigger.Metadata = stringifyMetadata(metadata)
+			}
 			info.Triggers = append(info.Triggers, trigger)
 		}
 	}
 
 	return info
+}
+
+// stringifyMetadata converts a KEDA trigger metadata map into a map[string]string.
+// KEDA stores all metadata values as strings, but we coerce defensively in case
+// the unstructured representation yields other scalar types.
+func stringifyMetadata(metadata map[string]interface{}) map[string]string {
+	if len(metadata) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(metadata))
+	for k, v := range metadata {
+		switch val := v.(type) {
+		case string:
+			out[k] = val
+		case nil:
+			out[k] = ""
+		default:
+			out[k] = fmt.Sprintf("%v", val)
+		}
+	}
+	return out
 }
