@@ -70,6 +70,25 @@ func Export(log *slog.Logger, pumpCfg pump.Config, pumpClient *pump.Client, clus
 	return pumpClient.Send(pumpCfg.Endpoint, clusterID, jsonData)
 }
 
+// logScaledObjects logs the KEDA ScaledObjects in the payload right before export,
+// using the main app logger so output is visible under the configured log handler.
+func logScaledObjects(log *slog.Logger, keda *collector.KEDAMetrics) {
+	if keda == nil {
+		log.Info("scaledobjects_before_export", "count", 0, "keda_metrics", "nil")
+		return
+	}
+	log.Info("scaledobjects_before_export", "count", len(keda.ScaledObjects))
+	for i := range keda.ScaledObjects {
+		so := keda.ScaledObjects[i]
+		log.Info("scaledobject_before_export",
+			"namespace", so.Namespace,
+			"name", so.Name,
+			"target", so.TargetKind+"/"+so.TargetName,
+			"triggers", len(so.Triggers),
+		)
+	}
+}
+
 // RunCycle collects metrics, logs payload size, and if Pump is enabled resolves IDs and sends to Pump.
 // Returns (true, nil) when a payload was sent successfully, (false, nil) when skipped or Pump disabled, (false, err) on error.
 func RunCycle(ctx context.Context, log *slog.Logger, client *kubernetes.Clientset, clusterID string, metricsClient *metricsclient.Clientset, dynClient dynamic.Interface, pumpCfg pump.Config, pumpClient *pump.Client) (exported bool, err error) {
@@ -86,6 +105,8 @@ func RunCycle(ctx context.Context, log *slog.Logger, client *kubernetes.Clientse
 
 	kedaMetrics := collector.CollectScaledObjects(ctx, dynClient, clusterID)
 	payload.Metrics.KEDA = kedaMetrics
+
+	logScaledObjects(log, kedaMetrics)
 
 	if !pumpCfg.Enabled {
 		return false, nil
