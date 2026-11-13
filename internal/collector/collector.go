@@ -320,9 +320,8 @@ func buildContainerInfos(
 	return infos
 }
 
-// sumContainerResourceMetrics sums each container's already-built Requests/Limits into pod-level totals,
-// so the pod-level numbers are always consistent with the per-container ones — one computation over the
-// container specs, not two separate ones.
+// sumContainerResourceMetrics sums each container's already-built Requests/Limits into pod-level
+// totals, so the pod-level numbers are always consistent with the per-container ones.
 func sumContainerResourceMetrics(containers []ContainerInfo) (requests, limits ResourceMetrics) {
 	var reqCPU, reqMem, limCPU, limMem int64
 	for _, c := range containers {
@@ -393,9 +392,8 @@ func Collect(ctx context.Context, client kubernetes.Interface, clusterID string,
 	rsToDeploy := replicaSetToDeploymentMap(ctx, client)
 
 	nodeUsageMap := make(map[string]resourceUsage)
-	// podContainerUsageMap: "namespace/pod" -> container name -> usage. metrics-server reports
-	// per-container usage already (podMetrics.Containers); keep it per-container instead of summing
-	// it away, so a sidecar's usage doesn't hide inside the app container's number.
+	// podContainerUsageMap: "namespace/pod" -> container name -> usage, from metrics-server's
+	// per-container report (see the pod-level Usage sum below for why this stays per-container).
 	podContainerUsageMap := make(map[string]map[string]resourceUsage)
 	if metricsClient != nil {
 		nodeMetricsList, err := metricsClient.MetricsV1beta1().NodeMetricses().List(ctx, metav1.ListOptions{})
@@ -426,14 +424,6 @@ func Collect(ctx context.Context, client kubernetes.Interface, clusterID string,
 					}
 				}
 				podContainerUsageMap[podKey] = containerUsage
-			}
-			for podKey, containers := range podContainerUsageMap {
-				var cpuMilli, memBytes int64
-				for _, usage := range containers {
-					cpuMilli += usage.cpuMilli
-					memBytes += usage.memBytes
-				}
-				collectorLog.Debug("pod_usage", "pod", podKey, "cpu_millicores", cpuMilli, "memory_bytes", memBytes)
 			}
 		}
 	} else {
@@ -482,10 +472,9 @@ func Collect(ctx context.Context, client kubernetes.Interface, clusterID string,
 			Labels:         labels,
 			OwnerReference: podWorkloadOwner(pod.OwnerReferences, pod.Namespace, rsToDeploy),
 		}
-		// Pod-level usage stays the sum across every container metrics-server reports for this pod —
-		// including a restartable (native sidecar) init container, exactly like before per-container data
-		// existed (the old code summed podMetrics.Containers unconditionally). Summing only pod.Spec.Containers
-		// here would silently drop a running native sidecar's usage from the pod total.
+		// Pod-level usage sums every container metrics-server reports for this pod, including a
+		// restartable (native sidecar) init container — summing only pod.Spec.Containers would
+		// silently drop a running sidecar's usage from the pod total.
 		if len(containerUsage) > 0 {
 			var cpuMilli, memBytes int64
 			for _, usage := range containerUsage {
@@ -494,6 +483,7 @@ func Collect(ctx context.Context, client kubernetes.Interface, clusterID string,
 			}
 			podUsage := resourceMetricsFromMilliBytes(cpuMilli, memBytes)
 			podSummary.Usage = &podUsage
+			collectorLog.Debug("pod_usage", "pod", podKey, "cpu_millicores", cpuMilli, "memory_bytes", memBytes)
 		}
 		podsByNode[pod.Spec.NodeName] = append(podsByNode[pod.Spec.NodeName], podSummary)
 	}
