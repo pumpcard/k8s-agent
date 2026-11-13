@@ -126,16 +126,17 @@ func resourceMetricsFromQuantities(cpuQuantity resource.Quantity, memQuantity re
 }
 
 // resourceMetricsFromResourceList reads a single container's request or limit list.
-// A resource absent from the list yields a zero quantity (no request/limit set), same as sumContainerRequestsLimits.
+// A resource absent from the list yields a zero quantity (no request/limit set).
 func resourceMetricsFromResourceList(resourceList corev1.ResourceList) ResourceMetrics {
 	return resourceMetricsFromQuantities(resourceList[corev1.ResourceCPU], resourceList[corev1.ResourceMemory])
 }
 
-// resourceMetricsFromUsage converts a collected (cpuMilli, memBytes) usage sample to the API's ResourceMetrics shape.
-func resourceMetricsFromUsage(usage resourceUsage) ResourceMetrics {
+// resourceMetricsFromMilliBytes turns a (cpu millicores, memory bytes) pair — a usage sample, or a sum
+// of several containers' requests/limits — into the API's ResourceMetrics shape.
+func resourceMetricsFromMilliBytes(cpuMillicores, memoryBytes int64) ResourceMetrics {
 	return resourceMetricsFromQuantities(
-		*resource.NewMilliQuantity(usage.cpuMilli, resource.DecimalSI),
-		*resource.NewQuantity(usage.memBytes, resource.BinarySI),
+		*resource.NewMilliQuantity(cpuMillicores, resource.DecimalSI),
+		*resource.NewQuantity(memoryBytes, resource.BinarySI),
 	)
 }
 
@@ -289,6 +290,50 @@ func containerInfoFromStatus(spec corev1.Container, status *corev1.ContainerStat
 	return containerInfo
 }
 
+// buildContainerInfos builds one ContainerInfo per container spec (regular or init — the shape is the
+// same for both), filling in its requests/limits from the spec and its usage, if metrics-server reported
+// any, from containerUsage. Returns nil for an empty containerSpecs (so an empty InitContainers list
+// stays the omitempty zero value instead of an allocated empty slice).
+func buildContainerInfos(
+	containerSpecs []corev1.Container,
+	statuses []corev1.ContainerStatus,
+	containerUsage map[string]resourceUsage,
+) []ContainerInfo {
+	if len(containerSpecs) == 0 {
+		return nil
+	}
+	statusByName := make(map[string]*corev1.ContainerStatus, len(statuses))
+	for index := range statuses {
+		statusByName[statuses[index].Name] = &statuses[index]
+	}
+	infos := make([]ContainerInfo, 0, len(containerSpecs))
+	for _, spec := range containerSpecs {
+		info := containerInfoFromStatus(spec, statusByName[spec.Name])
+		info.Requests = resourceMetricsFromResourceList(spec.Resources.Requests)
+		info.Limits = resourceMetricsFromResourceList(spec.Resources.Limits)
+		if usage, ok := containerUsage[spec.Name]; ok {
+			usageMetrics := resourceMetricsFromMilliBytes(usage.cpuMilli, usage.memBytes)
+			info.Usage = &usageMetrics
+		}
+		infos = append(infos, info)
+	}
+	return infos
+}
+
+// sumContainerResourceMetrics sums each container's already-built Requests/Limits into pod-level totals,
+// so the pod-level numbers are always consistent with the per-container ones — one computation over the
+// container specs, not two separate ones.
+func sumContainerResourceMetrics(containers []ContainerInfo) (requests, limits ResourceMetrics) {
+	var reqCPU, reqMem, limCPU, limMem int64
+	for _, c := range containers {
+		reqCPU += c.Requests.CPUMillicores
+		reqMem += c.Requests.MemoryBytes
+		limCPU += c.Limits.CPUMillicores
+		limMem += c.Limits.MemoryBytes
+	}
+	return resourceMetricsFromMilliBytes(reqCPU, reqMem), resourceMetricsFromMilliBytes(limCPU, limMem)
+}
+
 // phaseAPI returns API enum: Pending | Running | Succeeded | Failed | Unknown
 func phaseAPI(phase corev1.PodPhase) string {
 	switch phase {
@@ -401,55 +446,21 @@ func Collect(ctx context.Context, client kubernetes.Interface, clusterID string,
 		containerUsage := podContainerUsageMap[podKey]
 
 		restartCount := 0
-		containers := make([]ContainerInfo, 0, len(pod.Spec.Containers))
-		statusByName := make(map[string]*corev1.ContainerStatus)
 		for index := range pod.Status.ContainerStatuses {
-			containerStatus := &pod.Status.ContainerStatuses[index]
-			statusByName[containerStatus.Name] = containerStatus
-			restartCount += int(containerStatus.RestartCount)
+			restartCount += int(pod.Status.ContainerStatuses[index].RestartCount)
 		}
-		for _, container := range pod.Spec.Containers {
-			containerInfo := containerInfoFromStatus(container, statusByName[container.Name])
-			containerInfo.Requests = resourceMetricsFromResourceList(container.Resources.Requests)
-			containerInfo.Limits = resourceMetricsFromResourceList(container.Resources.Limits)
-			if usage, ok := containerUsage[container.Name]; ok {
-				usageMetrics := resourceMetricsFromUsage(usage)
-				containerInfo.Usage = &usageMetrics
-			}
-			containers = append(containers, containerInfo)
+		containers := buildContainerInfos(pod.Spec.Containers, pod.Status.ContainerStatuses, containerUsage)
+		if containers == nil {
+			containers = []ContainerInfo{} // Containers has no `omitempty`: always serialize as [], never null.
 		}
+		initContainers := buildContainerInfos(pod.Spec.InitContainers, pod.Status.InitContainerStatuses, containerUsage)
+		podRequests, podLimits := sumContainerResourceMetrics(containers)
 
-		initStatusByName := make(map[string]*corev1.ContainerStatus)
-		for index := range pod.Status.InitContainerStatuses {
-			initStatus := &pod.Status.InitContainerStatuses[index]
-			initStatusByName[initStatus.Name] = initStatus
-		}
-		var initContainers []ContainerInfo
-		if len(pod.Spec.InitContainers) > 0 {
-			initContainers = make([]ContainerInfo, 0, len(pod.Spec.InitContainers))
-			for _, container := range pod.Spec.InitContainers {
-				containerInfo := containerInfoFromStatus(container, initStatusByName[container.Name])
-				containerInfo.Requests = resourceMetricsFromResourceList(container.Resources.Requests)
-				containerInfo.Limits = resourceMetricsFromResourceList(container.Resources.Limits)
-				// Restartable (sidecar) init containers keep running and report usage like regular containers.
-				if usage, ok := containerUsage[container.Name]; ok {
-					usageMetrics := resourceMetricsFromUsage(usage)
-					containerInfo.Usage = &usageMetrics
-				}
-				initContainers = append(initContainers, containerInfo)
-			}
-		}
 		var startTime *string
 		if pod.Status.StartTime != nil {
 			formattedStartTime := pod.Status.StartTime.Format(time.RFC3339)
 			startTime = &formattedStartTime
 		}
-		requestedCPUMillicores, requestedMemoryBytes := sumContainerRequestsLimits(pod.Spec.Containers, false)
-		limitCPUMillicores, limitMemoryBytes := sumContainerRequestsLimits(pod.Spec.Containers, true)
-		requestedCPUQuantity := resource.NewMilliQuantity(requestedCPUMillicores, resource.DecimalSI)
-		requestedMemoryQuantity := resource.NewQuantity(requestedMemoryBytes, resource.BinarySI)
-		limitCPUQuantity := resource.NewMilliQuantity(limitCPUMillicores, resource.DecimalSI)
-		limitMemoryQuantity := resource.NewQuantity(limitMemoryBytes, resource.BinarySI)
 		labels := pod.Labels
 		if labels == nil {
 			labels = make(map[string]string)
@@ -465,8 +476,8 @@ func Collect(ctx context.Context, client kubernetes.Interface, clusterID string,
 			StartTime:      startTime,
 			Containers:     containers,
 			InitContainers: initContainers,
-			Requests:       resourceMetricsFromQuantities(*requestedCPUQuantity, *requestedMemoryQuantity),
-			Limits:         resourceMetricsFromQuantities(*limitCPUQuantity, *limitMemoryQuantity),
+			Requests:       podRequests,
+			Limits:         podLimits,
 			Usage:          nil,
 			Labels:         labels,
 			OwnerReference: podWorkloadOwner(pod.OwnerReferences, pod.Namespace, rsToDeploy),
@@ -481,7 +492,7 @@ func Collect(ctx context.Context, client kubernetes.Interface, clusterID string,
 				cpuMilli += usage.cpuMilli
 				memBytes += usage.memBytes
 			}
-			podUsage := resourceMetricsFromUsage(resourceUsage{cpuMilli: cpuMilli, memBytes: memBytes})
+			podUsage := resourceMetricsFromMilliBytes(cpuMilli, memBytes)
 			podSummary.Usage = &podUsage
 		}
 		podsByNode[pod.Spec.NodeName] = append(podsByNode[pod.Spec.NodeName], podSummary)
@@ -559,18 +570,4 @@ func Collect(ctx context.Context, client kubernetes.Interface, clusterID string,
 	}
 	collectorLog.Debug("collect_done", "nodes", len(payload.Nodes))
 	return payload
-}
-
-func sumContainerRequestsLimits(containers []corev1.Container, useLimits bool) (cpuMillicores, memoryBytes int64) {
-	for _, container := range containers {
-		var resourceList corev1.ResourceList
-		if useLimits {
-			resourceList = container.Resources.Limits
-		} else {
-			resourceList = container.Resources.Requests
-		}
-		cpuMillicores += quantityToMilli(resourceList[corev1.ResourceCPU])
-		memoryBytes += quantityToBytes(resourceList[corev1.ResourceMemory])
-	}
-	return cpuMillicores, memoryBytes
 }
