@@ -471,15 +471,15 @@ func Collect(ctx context.Context, client kubernetes.Interface, clusterID string,
 			Labels:         labels,
 			OwnerReference: podWorkloadOwner(pod.OwnerReferences, pod.Namespace, rsToDeploy),
 		}
-		// Pod-level usage stays the sum across (regular) containers, same shape as before per-container
-		// data existed, kept for callers that only read the pod total.
+		// Pod-level usage stays the sum across every container metrics-server reports for this pod —
+		// including a restartable (native sidecar) init container, exactly like before per-container data
+		// existed (the old code summed podMetrics.Containers unconditionally). Summing only pod.Spec.Containers
+		// here would silently drop a running native sidecar's usage from the pod total.
 		if len(containerUsage) > 0 {
 			var cpuMilli, memBytes int64
-			for _, container := range pod.Spec.Containers {
-				if usage, ok := containerUsage[container.Name]; ok {
-					cpuMilli += usage.cpuMilli
-					memBytes += usage.memBytes
-				}
+			for _, usage := range containerUsage {
+				cpuMilli += usage.cpuMilli
+				memBytes += usage.memBytes
 			}
 			podUsage := resourceMetricsFromUsage(resourceUsage{cpuMilli: cpuMilli, memBytes: memBytes})
 			podSummary.Usage = &podUsage

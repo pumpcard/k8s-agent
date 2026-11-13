@@ -39,10 +39,12 @@ func newNode(name string) *corev1.Node {
 	}
 }
 
-// newPod builds a pod with one init container, one app container (with a request/limit)
-// and one sidecar container (no limit), matching the shapes M1's per-container collection
-// needs to tell apart.
+// newPod builds a pod with two init containers — "migrate" (run-to-completion, no usage) and
+// "native-sidecar" (restartable, RestartPolicy=Always, keeps running and reports usage like an
+// app container) — one app container (with a request/limit) and one sidecar container (no
+// limit), matching the shapes M1's per-container collection needs to tell apart.
 func newPod(namespace, name, node string) *corev1.Pod {
+	alwaysRestart := corev1.ContainerRestartPolicyAlways
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name},
 		Spec: corev1.PodSpec{
@@ -53,6 +55,13 @@ func newPod(namespace, name, node string) *corev1.Pod {
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{corev1.ResourceCPU: quantity("50m"), corev1.ResourceMemory: quantity("64Mi")},
 						Limits:   corev1.ResourceList{corev1.ResourceCPU: quantity("100m"), corev1.ResourceMemory: quantity("128Mi")},
+					},
+				},
+				{
+					Name:          "native-sidecar",
+					RestartPolicy: &alwaysRestart,
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{corev1.ResourceCPU: quantity("20m"), corev1.ResourceMemory: quantity("16Mi")},
 					},
 				},
 			},
@@ -77,6 +86,7 @@ func newPod(namespace, name, node string) *corev1.Pod {
 			Phase: corev1.PodRunning,
 			InitContainerStatuses: []corev1.ContainerStatus{
 				{Name: "migrate", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}}},
+				{Name: "native-sidecar", Ready: true, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
 			},
 			ContainerStatuses: []corev1.ContainerStatus{
 				{Name: "app", Ready: true, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
@@ -133,8 +143,9 @@ func TestCollect_PerContainerRequestsLimitsUsage(t *testing.T) {
 	k8sClient := k8sfake.NewSimpleClientset(node, pod)
 	metricsClient := newMetricsClient(
 		newPodMetrics("default", "web-0", map[string][2]string{
-			"app":     {"420m", "900Mi"},
-			"sidecar": {"5m", "20Mi"},
+			"app":            {"420m", "900Mi"},
+			"sidecar":        {"5m", "20Mi"},
+			"native-sidecar": {"7m", "10Mi"},
 		}),
 	)
 
@@ -173,23 +184,34 @@ func TestCollect_PerContainerRequestsLimitsUsage(t *testing.T) {
 		t.Errorf("sidecar usage = %+v, want 5m", sidecar.Usage)
 	}
 
-	if len(podSummary.InitContainers) != 1 {
-		t.Fatalf("expected 1 init container, got %d", len(podSummary.InitContainers))
+	if len(podSummary.InitContainers) != 2 {
+		t.Fatalf("expected 2 init containers, got %d", len(podSummary.InitContainers))
 	}
-	initContainer := podSummary.InitContainers[0]
-	if initContainer.Name != "migrate" {
-		t.Errorf("init container name = %q, want migrate", initContainer.Name)
+	migrate := containerByName(podSummary.InitContainers, "migrate")
+	if migrate == nil {
+		t.Fatal("expected a 'migrate' init container")
 	}
-	if initContainer.Requests.CPUMillicores != 50 || initContainer.Limits.CPUMillicores != 100 {
-		t.Errorf("init container requests/limits = %+v/%+v, want 50m/100m", initContainer.Requests, initContainer.Limits)
+	if migrate.Requests.CPUMillicores != 50 || migrate.Limits.CPUMillicores != 100 {
+		t.Errorf("migrate requests/limits = %+v/%+v, want 50m/100m", migrate.Requests, migrate.Limits)
 	}
-	if initContainer.Usage != nil {
-		t.Errorf("init container usage = %+v, want nil (completed, not in metrics-server)", initContainer.Usage)
+	if migrate.Usage != nil {
+		t.Errorf("migrate usage = %+v, want nil (completed, not in metrics-server)", migrate.Usage)
 	}
 
-	// Pod-level usage must still be the sum across containers, for callers reading only the pod total.
-	if podSummary.Usage == nil || podSummary.Usage.CPUMillicores != 425 {
-		t.Errorf("pod usage = %+v, want 425m (420+5)", podSummary.Usage)
+	// A restartable (native sidecar) init container keeps running and reports usage like an app
+	// container — this is the case that must still be folded into the pod-level total below.
+	nativeSidecar := containerByName(podSummary.InitContainers, "native-sidecar")
+	if nativeSidecar == nil {
+		t.Fatal("expected a 'native-sidecar' init container")
+	}
+	if nativeSidecar.Usage == nil || nativeSidecar.Usage.CPUMillicores != 7 {
+		t.Errorf("native-sidecar usage = %+v, want 7m", nativeSidecar.Usage)
+	}
+
+	// Pod-level usage must still be the sum across every container metrics-server reports for this
+	// pod, including a running native sidecar init container — not just pod.Spec.Containers.
+	if podSummary.Usage == nil || podSummary.Usage.CPUMillicores != 432 {
+		t.Errorf("pod usage = %+v, want 432m (420+5+7)", podSummary.Usage)
 	}
 }
 
