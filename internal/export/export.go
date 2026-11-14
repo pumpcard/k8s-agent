@@ -23,7 +23,7 @@ type Payload struct {
 }
 
 // CollectPayload collects cluster metrics and marshals to JSON. Caller can use Payload.Metrics and Payload.JSON (e.g. len for logging).
-func CollectPayload(ctx context.Context, client *kubernetes.Clientset, clusterID string, metricsClient *metricsclient.Clientset) (*Payload, error) {
+func CollectPayload(ctx context.Context, client kubernetes.Interface, clusterID string, metricsClient metricsclient.Interface) (*Payload, error) {
 	metrics := collector.Collect(ctx, client, clusterID, metricsClient)
 	jsonData, err := json.Marshal(metrics)
 	if err != nil {
@@ -91,7 +91,7 @@ func logScaledObjects(log *slog.Logger, keda *collector.KEDAMetrics) {
 
 // RunCycle collects metrics, logs payload size, and if Pump is enabled resolves IDs and sends to Pump.
 // Returns (true, nil) when a payload was sent successfully, (false, nil) when skipped or Pump disabled, (false, err) on error.
-func RunCycle(ctx context.Context, log *slog.Logger, client *kubernetes.Clientset, clusterID string, metricsClient *metricsclient.Clientset, dynClient dynamic.Interface, pumpCfg pump.Config, pumpClient *pump.Client) (exported bool, err error) {
+func RunCycle(ctx context.Context, log *slog.Logger, client kubernetes.Interface, clusterID string, metricsClient metricsclient.Interface, dynClient dynamic.Interface, pumpCfg pump.Config, pumpClient *pump.Client) (exported bool, err error) {
 	payload, err := CollectPayload(ctx, client, clusterID, metricsClient)
 	if err != nil {
 		return false, err

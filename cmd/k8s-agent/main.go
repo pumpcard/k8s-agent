@@ -49,7 +49,10 @@ func main() {
 		log.Error("kubernetes client", "error", err)
 		os.Exit(1)
 	}
-	var metricsClient *metricsclient.Clientset
+	// Declared as the interface, not *metricsclient.Clientset: assigning a concrete nil pointer to an
+	// interface variable produces a non-nil interface, which would defeat every "metrics disabled" check
+	// downstream (collector.Collect compares metricsClient != nil).
+	var metricsClient metricsclient.Interface
 	if mc, err := metricsclient.NewForConfig(cfg); err == nil {
 		metricsClient = mc
 	}
