@@ -80,15 +80,12 @@ type ContainerInfo struct {
 	LastReason   *string          `json:"last_reason,omitempty"`   // e.g. "OOMKilled", "Error"
 	LastExitCode *int32           `json:"last_exit_code,omitempty"`
 	LastMessage  *string          `json:"last_message,omitempty"`
-	// LastFinishedAt is when the last terminated run ended (RFC 3339, UTC): the OOM kill time on the backend.
-	LastFinishedAt *string `json:"last_finished_at,omitempty"`
-	// RestartPolicy is the container's own restartPolicy from the pod spec. "Always" on an init container
-	// marks a native sidecar (keeps running, reports usage, adds to the pod's effective request). Absent
-	// for ordinary init containers, so absent also means "not reported" from an agent that predates it.
-	RestartPolicy *string          `json:"restart_policy,omitempty"`
-	Requests      ResourceMetrics  `json:"requests"`
-	Limits        ResourceMetrics  `json:"limits"`
-	Usage         *ResourceMetrics `json:"usage,omitempty"` // nil when metrics-server has no sample for this container
+	Requests     ResourceMetrics  `json:"requests"`
+	Limits       ResourceMetrics  `json:"limits"`
+	Usage        *ResourceMetrics `json:"usage,omitempty"` // nil when metrics-server has no sample for this container
+
+	LastFinishedAt *string `json:"last_finished_at,omitempty"` // RFC 3339 UTC; the OOM kill time on the backend
+	RestartPolicy  *string `json:"restart_policy,omitempty"`   // "Always" on an init container = native sidecar
 }
 
 type PodSummary struct {

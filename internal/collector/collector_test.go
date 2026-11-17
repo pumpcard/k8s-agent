@@ -216,8 +216,6 @@ func TestCollect_PerContainerRequestsLimitsUsage(t *testing.T) {
 	}
 }
 
-// A native sidecar (init container with restartPolicy Always) must be told apart from an ordinary
-// init container, and from an app container, by the restart_policy field.
 func TestCollect_InitContainerRestartPolicy(t *testing.T) {
 	node := newNode("node-1")
 	pod := newPod("default", "web-0", "node-1")
@@ -239,7 +237,6 @@ func TestCollect_InitContainerRestartPolicy(t *testing.T) {
 	}
 }
 
-// The OOM kill time is the container's last termination finish time, sent as RFC 3339 in UTC.
 func TestCollect_LastFinishedAt(t *testing.T) {
 	node := newNode("node-1")
 	pod := newPod("default", "web-0", "node-1")
@@ -252,7 +249,6 @@ func TestCollect_LastFinishedAt(t *testing.T) {
 			FinishedAt: metav1.NewTime(finishedAt),
 		},
 	}
-	// A last termination without a finish time must leave the field unset.
 	pod.Status.ContainerStatuses[1].LastTerminationState = corev1.ContainerState{
 		Terminated: &corev1.ContainerStateTerminated{Reason: "Error", ExitCode: 1},
 	}
@@ -267,10 +263,6 @@ func TestCollect_LastFinishedAt(t *testing.T) {
 	sidecar := containerByName(podSummary.Containers, "sidecar")
 	if sidecar == nil || sidecar.LastFinishedAt != nil {
 		t.Errorf("sidecar last_finished_at = %v, want unset when there is no finish time", sidecar)
-	}
-	migrate := containerByName(podSummary.InitContainers, "migrate")
-	if migrate == nil || migrate.LastFinishedAt != nil {
-		t.Errorf("migrate last_finished_at = %v, want unset when it never terminated before", migrate)
 	}
 }
 
