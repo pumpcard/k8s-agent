@@ -3,6 +3,7 @@ package collector
 import (
 	"context"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -212,6 +213,56 @@ func TestCollect_PerContainerRequestsLimitsUsage(t *testing.T) {
 	// pod, including a running native sidecar init container — not just pod.Spec.Containers.
 	if podSummary.Usage == nil || podSummary.Usage.CPUMillicores != 432 {
 		t.Errorf("pod usage = %+v, want 432m (420+5+7)", podSummary.Usage)
+	}
+}
+
+func TestCollect_InitContainerRestartPolicy(t *testing.T) {
+	node := newNode("node-1")
+	pod := newPod("default", "web-0", "node-1")
+
+	payload := Collect(context.Background(), k8sfake.NewSimpleClientset(node, pod), "cluster-1", nil)
+	podSummary := payload.Nodes[0].Pods[0]
+
+	nativeSidecar := containerByName(podSummary.InitContainers, "native-sidecar")
+	if nativeSidecar == nil || nativeSidecar.RestartPolicy == nil || *nativeSidecar.RestartPolicy != "Always" {
+		t.Errorf("native-sidecar restart_policy = %v, want Always", nativeSidecar)
+	}
+	migrate := containerByName(podSummary.InitContainers, "migrate")
+	if migrate == nil || migrate.RestartPolicy != nil {
+		t.Errorf("migrate restart_policy = %v, want unset for an ordinary init container", migrate)
+	}
+	app := containerByName(podSummary.Containers, "app")
+	if app == nil || app.RestartPolicy != nil {
+		t.Errorf("app restart_policy = %v, want unset", app)
+	}
+}
+
+func TestCollect_LastFinishedAt(t *testing.T) {
+	node := newNode("node-1")
+	pod := newPod("default", "web-0", "node-1")
+	finishedAt := time.Date(2026, 11, 16, 3, 30, 15, 0, time.FixedZone("EST", -5*3600))
+	pod.Status.ContainerStatuses[0].RestartCount = 3
+	pod.Status.ContainerStatuses[0].LastTerminationState = corev1.ContainerState{
+		Terminated: &corev1.ContainerStateTerminated{
+			Reason:     "OOMKilled",
+			ExitCode:   137,
+			FinishedAt: metav1.NewTime(finishedAt),
+		},
+	}
+	pod.Status.ContainerStatuses[1].LastTerminationState = corev1.ContainerState{
+		Terminated: &corev1.ContainerStateTerminated{Reason: "Error", ExitCode: 1},
+	}
+
+	payload := Collect(context.Background(), k8sfake.NewSimpleClientset(node, pod), "cluster-1", nil)
+	podSummary := payload.Nodes[0].Pods[0]
+
+	app := containerByName(podSummary.Containers, "app")
+	if app == nil || app.LastFinishedAt == nil || *app.LastFinishedAt != "2026-11-16T08:30:15Z" {
+		t.Errorf("app last_finished_at = %v, want 2026-11-16T08:30:15Z", app)
+	}
+	sidecar := containerByName(podSummary.Containers, "sidecar")
+	if sidecar == nil || sidecar.LastFinishedAt != nil {
+		t.Errorf("sidecar last_finished_at = %v, want unset when there is no finish time", sidecar)
 	}
 }
 

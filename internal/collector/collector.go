@@ -83,6 +83,9 @@ type ContainerInfo struct {
 	Requests     ResourceMetrics  `json:"requests"`
 	Limits       ResourceMetrics  `json:"limits"`
 	Usage        *ResourceMetrics `json:"usage,omitempty"` // nil when metrics-server has no sample for this container
+
+	LastFinishedAt *string `json:"last_finished_at,omitempty"` // RFC 3339 UTC; the OOM kill time on the backend
+	RestartPolicy  *string `json:"restart_policy,omitempty"`   // "Always" on an init container = native sidecar
 }
 
 type PodSummary struct {
@@ -285,7 +288,15 @@ func containerInfoFromStatus(spec corev1.Container, status *corev1.ContainerStat
 			if last.Message != "" {
 				containerInfo.LastMessage = &last.Message
 			}
+			if !last.FinishedAt.IsZero() {
+				finishedAt := last.FinishedAt.UTC().Format(time.RFC3339)
+				containerInfo.LastFinishedAt = &finishedAt
+			}
 		}
+	}
+	if spec.RestartPolicy != nil {
+		restartPolicy := string(*spec.RestartPolicy)
+		containerInfo.RestartPolicy = &restartPolicy
 	}
 	return containerInfo
 }
