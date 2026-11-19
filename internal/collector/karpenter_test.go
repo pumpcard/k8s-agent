@@ -146,6 +146,63 @@ func TestCollectKarpenter_NodePoolFailureKeepsNodeClaimsAndPendingPods(t *testin
 	}
 }
 
+func TestPodRequests(t *testing.T) {
+	always := corev1.ContainerRestartPolicyAlways
+	requests := func(cpu, memory string) corev1.ResourceRequirements {
+		return corev1.ResourceRequirements{Requests: corev1.ResourceList{
+			corev1.ResourceCPU: resource.MustParse(cpu), corev1.ResourceMemory: resource.MustParse(memory),
+		}}
+	}
+	tests := []struct {
+		name        string
+		spec        corev1.PodSpec
+		cpu, memory int64
+	}{
+		{
+			name: "init container larger than app, sidecar, overhead",
+			spec: corev1.PodSpec{
+				InitContainers: []corev1.Container{
+					{Name: "sidecar", RestartPolicy: &always, Resources: requests("50m", "64Mi")},
+					{Name: "migrate", Resources: requests("500m", "1Gi")},
+				},
+				Containers: []corev1.Container{{Name: "app", Resources: requests("100m", "128Mi")}},
+				Overhead:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10m"), corev1.ResourceMemory: resource.MustParse("1Mi")},
+			},
+			cpu:    560,
+			memory: (1 << 30) + (64 << 20) + (1 << 20),
+		},
+		{
+			name: "app and sidecar larger than init container",
+			spec: corev1.PodSpec{
+				InitContainers: []corev1.Container{
+					{Name: "init", Resources: requests("100m", "64Mi")},
+					{Name: "sidecar", RestartPolicy: &always, Resources: requests("200m", "256Mi")},
+				},
+				Containers: []corev1.Container{{Name: "app", Resources: requests("1", "1Gi")}},
+			},
+			cpu:    1200,
+			memory: (1 << 30) + (256 << 20),
+		},
+		{
+			name: "only init containers",
+			spec: corev1.PodSpec{
+				InitContainers: []corev1.Container{{Name: "init", Resources: requests("300m", "512Mi")}},
+				Containers:     []corev1.Container{{Name: "app"}},
+			},
+			cpu:    300,
+			memory: 512 << 20,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cpu, memory := podRequests(&corev1.Pod{Spec: tt.spec})
+			if cpu != tt.cpu || memory != tt.memory {
+				t.Errorf("podRequests = (%d, %d), want (%d, %d)", cpu, memory, tt.cpu, tt.memory)
+			}
+		})
+	}
+}
+
 func TestCollectKarpenter_WithoutKarpenter(t *testing.T) {
 	metrics := CollectKarpenter(context.Background(), k8sfake.NewSimpleClientset(), nil, "cluster-1")
 

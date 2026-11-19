@@ -274,10 +274,7 @@ func collectPendingPods(ctx context.Context, client kubernetes.Interface, metric
 			Name:      pod.Name,
 			CreatedAt: pod.CreationTimestamp.UTC().Format(time.RFC3339),
 		}
-		for _, container := range pod.Spec.Containers {
-			pending.CPURequestMillicores += container.Resources.Requests.Cpu().MilliValue()
-			pending.MemoryRequestBytes += container.Resources.Requests.Memory().Value()
-		}
+		pending.CPURequestMillicores, pending.MemoryRequestBytes = podRequests(pod)
 		for _, c := range pod.Status.Conditions {
 			if c.Type == corev1.PodScheduled {
 				pending.ConditionReason, pending.ConditionMessage = c.Reason, c.Message
@@ -286,6 +283,35 @@ func collectPendingPods(ctx context.Context, client kubernetes.Interface, metric
 		metrics.PendingPods = append(metrics.PendingPods, pending)
 	}
 	metrics.Capabilities = append(metrics.Capabilities, "pending_pods")
+}
+
+// podRequests follows the scheduler's effective request rules: sidecar init containers
+// (restartPolicy Always) run alongside the app, regular init containers run one at a time
+// before it, and pod overhead is added on top.
+func podRequests(pod *corev1.Pod) (cpu, memory int64) {
+	for _, c := range pod.Spec.Containers {
+		cpu += c.Resources.Requests.Cpu().MilliValue()
+		memory += c.Resources.Requests.Memory().Value()
+	}
+	var sidecarCPU, sidecarMemory, initCPU, initMemory int64
+	for _, c := range pod.Spec.InitContainers {
+		reqCPU, reqMemory := c.Resources.Requests.Cpu().MilliValue(), c.Resources.Requests.Memory().Value()
+		if c.RestartPolicy != nil && *c.RestartPolicy == corev1.ContainerRestartPolicyAlways {
+			cpu += reqCPU
+			memory += reqMemory
+			sidecarCPU += reqCPU
+			sidecarMemory += reqMemory
+			reqCPU, reqMemory = sidecarCPU, sidecarMemory
+		} else {
+			reqCPU += sidecarCPU
+			reqMemory += sidecarMemory
+		}
+		initCPU = max(initCPU, reqCPU)
+		initMemory = max(initMemory, reqMemory)
+	}
+	cpu = max(cpu, initCPU) + pod.Spec.Overhead.Cpu().MilliValue()
+	memory = max(memory, initMemory) + pod.Spec.Overhead.Memory().Value()
+	return cpu, memory
 }
 
 func conditionAt(object map[string]any, conditionType string) map[string]any {
