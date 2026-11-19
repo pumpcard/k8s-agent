@@ -98,24 +98,15 @@ func TestCollectKarpenter_EnrichedPayload(t *testing.T) {
 			},
 		},
 	)
-	nodeClass := object(
-		"karpenter.k8s.aws/v1",
-		"EC2NodeClass",
-		"default",
-		map[string]any{"metadata": map[string]any{"name": "default"}},
-	)
-
 	listKinds := map[schema.GroupVersionResource]string{
-		nodePoolGVRs[0]:  "NodePoolList",
-		nodeClaimGVRs[0]: "NodeClaimList",
-		{Group: "karpenter.k8s.aws", Version: "v1", Resource: "ec2nodeclasses"}: "EC2NodeClassList",
+		nodePoolGVR:  "NodePoolList",
+		nodeClaimGVR: "NodeClaimList",
 	}
 	dynClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(
 		runtime.NewScheme(),
 		listKinds,
 		nodePool,
 		nodeClaim,
-		nodeClass,
 	)
 
 	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{
@@ -161,9 +152,10 @@ func TestCollectKarpenter_EnrichedPayload(t *testing.T) {
 	}
 	schedulerEvent := &corev1.Event{
 		ObjectMeta: metav1.ObjectMeta{
-			UID:       types.UID("scheduler-event"),
-			Namespace: "default",
-			Name:      "api.failed-scheduling",
+			UID:             types.UID("scheduler-event"),
+			Namespace:       "default",
+			Name:            "api.failed-scheduling",
+			ResourceVersion: "10",
 		},
 		InvolvedObject: corev1.ObjectReference{
 			UID:       pending.UID,
@@ -177,16 +169,13 @@ func TestCollectKarpenter_EnrichedPayload(t *testing.T) {
 		Count:               2,
 		ReportingController: "default-scheduler",
 		LastTimestamp:       metav1.NewTime(now),
-		Series: &corev1.EventSeries{
-			Count:            5,
-			LastObservedTime: metav1.NewMicroTime(now.Add(time.Minute)),
-		},
 	}
 	karpenterEvent := &corev1.Event{
 		ObjectMeta: metav1.ObjectMeta{
-			UID:       types.UID("karpenter-event"),
-			Namespace: "default",
-			Name:      "default-abc.disruption-blocked",
+			UID:             types.UID("karpenter-event"),
+			Namespace:       "default",
+			Name:            "default-abc.disruption-blocked",
+			ResourceVersion: "11",
 		},
 		InvolvedObject: corev1.ObjectReference{
 			Kind: "NodeClaim",
@@ -211,6 +200,7 @@ func TestCollectKarpenter_EnrichedPayload(t *testing.T) {
 		}}},
 	}
 	client := k8sfake.NewSimpleClientset(node, pending, schedulerEvent, karpenterEvent, deployment)
+	lastSeenResourceVersion = 0
 
 	metrics := CollectKarpenter(context.Background(), client, dynClient, "cluster-1")
 
@@ -224,7 +214,7 @@ func TestCollectKarpenter_EnrichedPayload(t *testing.T) {
 		t.Fatalf("node pools = %d, want 1", len(metrics.NodePools))
 	}
 	pool := metrics.NodePools[0]
-	if pool.Ready == nil || !*pool.Ready || pool.NodeClassName != "default" || pool.NodeCount != 2 {
+	if pool.Ready == nil || !*pool.Ready || pool.NodeClassName != "default" || pool.NodeCount != 1 {
 		t.Errorf("node pool = %+v", pool)
 	}
 	if pool.CPULimitMillicores == nil || *pool.CPULimitMillicores != 20_000 {
@@ -254,7 +244,7 @@ func TestCollectKarpenter_EnrichedPayload(t *testing.T) {
 		t.Fatalf("events = %d, want 2", len(metrics.Events))
 	}
 	if metrics.Events[0].ReportingController == "" || metrics.Events[0].LastTimestamp == "" ||
-		metrics.Events[0].Count != 5 || metrics.Events[0].Timestamp != now.Add(time.Minute).Format(time.RFC3339) {
+		metrics.Events[0].EventType != corev1.EventTypeWarning {
 		t.Errorf("event additions were not populated: %+v", metrics.Events[0])
 	}
 
@@ -269,6 +259,10 @@ func TestCollectKarpenter_EnrichedPayload(t *testing.T) {
 		if !jsonContains(data, field) {
 			t.Errorf("payload missing %s: %s", field, data)
 		}
+	}
+
+	if again := CollectKarpenter(context.Background(), client, dynClient, "cluster-1"); len(again.Events) != 0 {
+		t.Errorf("already-sent events were resent: %+v", again.Events)
 	}
 }
 
@@ -290,8 +284,8 @@ func TestCollectKarpenter_NodePoolFailureKeepsIndependentTelemetry(t *testing.T)
 	dynClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(
 		runtime.NewScheme(),
 		map[schema.GroupVersionResource]string{
-			nodePoolGVRs[0]:  "NodePoolList",
-			nodeClaimGVRs[0]: "NodeClaimList",
+			nodePoolGVR:  "NodePoolList",
+			nodeClaimGVR: "NodeClaimList",
 		},
 		nodeClaim,
 	)
@@ -325,8 +319,8 @@ func TestCollectKarpenter_TransientCoreAPIFailuresKeepIndependentTelemetry(t *te
 	dynClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(
 		runtime.NewScheme(),
 		map[schema.GroupVersionResource]string{
-			nodePoolGVRs[0]:  "NodePoolList",
-			nodeClaimGVRs[0]: "NodeClaimList",
+			nodePoolGVR:  "NodePoolList",
+			nodeClaimGVR: "NodeClaimList",
 		},
 	)
 	dynClient.PrependReactor("list", "nodepools", func(k8stesting.Action) (bool, runtime.Object, error) {
@@ -359,58 +353,6 @@ func TestCollectKarpenter_TransientCoreAPIFailuresKeepIndependentTelemetry(t *te
 	assertStrings(t, metrics.Capabilities, []string{"pending_pods", "events"})
 	if len(metrics.PendingPods) != 1 {
 		t.Errorf("pending pods were suppressed: %+v", metrics)
-	}
-}
-
-func TestSchedulingRequestsUsesRestartableAndLargestInitStage(t *testing.T) {
-	always := corev1.ContainerRestartPolicyAlways
-	spec := corev1.PodSpec{
-		Containers: []corev1.Container{
-			{Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
-				corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("1Gi"),
-			}}},
-		},
-		InitContainers: []corev1.Container{
-			{
-				RestartPolicy: &always,
-				Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
-					corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("128Mi"),
-				}},
-			},
-			{Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
-				corev1.ResourceCPU: resource.MustParse("2"), corev1.ResourceMemory: resource.MustParse("256Mi"),
-			}}},
-		},
-		Overhead: corev1.ResourceList{
-			corev1.ResourceCPU:    resource.MustParse("50m"),
-			corev1.ResourceMemory: resource.MustParse("64Mi"),
-		},
-	}
-
-	cpu, memory := schedulingRequests(spec)
-
-	if cpu != 2_150 {
-		t.Errorf("cpu = %dm, want 2150m", cpu)
-	}
-	if memory != bytesOf("1216Mi") {
-		t.Errorf("memory = %d, want 1216Mi", memory)
-	}
-}
-
-func TestNodeClassRefAtSupportsV1Beta1APIVersion(t *testing.T) {
-	ref := nodeClassRefAt(map[string]any{
-		"spec": map[string]any{
-			"nodeClassRef": map[string]any{
-				"apiVersion": "karpenter.k8s.aws/v1beta1",
-				"kind":       "EC2NodeClass",
-				"name":       "default",
-			},
-		},
-	})
-
-	if ref.Group != "karpenter.k8s.aws" || ref.Version != "v1beta1" ||
-		ref.Kind != "EC2NodeClass" || ref.Name != "default" {
-		t.Errorf("node class ref = %+v", ref)
 	}
 }
 

@@ -2,9 +2,11 @@ package collector
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,9 +23,11 @@ import (
 
 var karpenterLog = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
+var lastSeenResourceVersion int64
+
 type KarpenterEvent struct {
 	UID                 string `json:"uid"`
-	Timestamp           string `json:"timestamp,omitempty"`
+	Timestamp           string `json:"timestamp"`
 	Reason              string `json:"reason"`
 	Message             string `json:"message"`
 	InvolvedObject      string `json:"involved_object"`
@@ -95,7 +99,6 @@ type KarpenterMetrics struct {
 	NodeClaims        []NodeClaimInfo  `json:"node_claims"`
 	PendingPods       []PendingPodInfo `json:"pending_pods"`
 	ControllerVersion string           `json:"controller_version,omitempty"`
-	ProviderVersion   string           `json:"provider_version,omitempty"`
 	Capabilities      []string         `json:"capabilities"`
 }
 
@@ -117,9 +120,8 @@ func CollectKarpenter(ctx context.Context, client kubernetes.Interface, dynClien
 		return metrics
 	}
 
-	nodePools, nodePoolGVR, nodeClasses, nodeLabelsOK, nodePoolsErr := collectNodePools(ctx, client, dynClient)
-	nodePoolsOK := nodePoolsErr == nil
-	if nodePoolsOK {
+	nodePools, nodeLabelsOK, nodePoolsErr := collectNodePools(ctx, client, dynClient)
+	if nodePoolsErr == nil {
 		metrics.NodePools = nodePools
 		metrics.Capabilities = append(metrics.Capabilities, "node_pools")
 		if nodeLabelsOK {
@@ -127,18 +129,14 @@ func CollectKarpenter(ctx context.Context, client kubernetes.Interface, dynClien
 		}
 	}
 
-	claims, claimRefs, nodeClaimsErr := collectNodeClaims(ctx, dynClient)
-	nodeClaimsOK := nodeClaimsErr == nil
-	if nodeClaimsOK {
+	claims, nodeClaimsErr := collectNodeClaims(ctx, dynClient)
+	if nodeClaimsErr == nil {
 		metrics.NodeClaims = claims
-		nodeClasses = append(nodeClasses, claimRefs...)
 		metrics.Capabilities = append(metrics.Capabilities, "node_claims")
 	}
 
-	if !nodePoolsOK && !nodeClaimsOK && isResourceAbsent(nodePoolsErr) && isResourceAbsent(nodeClaimsErr) {
-		// Preserve the old envelope when Karpenter is not installed or neither of
-		// its core APIs can be read. Capabilities remain empty so the backend does
-		// not claim telemetry that was not collected.
+	if isResourceAbsent(nodePoolsErr) && isResourceAbsent(nodeClaimsErr) {
+		// Karpenter is not installed: keep the old envelope and claim no capabilities.
 		collectKarpenterEvents(ctx, client, nil, metrics)
 		logKarpenterMetrics(metrics)
 		return metrics
@@ -154,12 +152,8 @@ func CollectKarpenter(ctx context.Context, client kubernetes.Interface, dynClien
 	if collectKarpenterEvents(ctx, client, pendingRefs, metrics) {
 		metrics.Capabilities = append(metrics.Capabilities, "events")
 	}
-	metrics.ControllerVersion, metrics.ProviderVersion = collectKarpenterVersions(ctx, client)
-	verifyReferencedNodeClasses(ctx, dynClient, nodeClasses)
+	metrics.ControllerVersion = collectKarpenterVersion(ctx, client)
 
-	if nodePoolsOK {
-		karpenterLog.Info("karpenter_api_discovered", "group", nodePoolGVR.Group, "version", nodePoolGVR.Version)
-	}
 	logKarpenterMetrics(metrics)
 	return metrics
 }
@@ -176,9 +170,17 @@ func collectKarpenterEvents(
 		return false
 	}
 
+	var maxRV int64
 	for i := range eventList.Items {
 		event := &eventList.Items[i]
 		if !isKarpenterSource(event) && !isPendingPodSchedulerEvent(event, pendingPodRefs) {
+			continue
+		}
+		rv, _ := strconv.ParseInt(event.ResourceVersion, 10, 64)
+		if rv > maxRV {
+			maxRV = rv
+		}
+		if rv <= lastSeenResourceVersion {
 			continue
 		}
 		ke := KarpenterEvent{
@@ -192,35 +194,16 @@ func collectKarpenterEvents(
 			EventType:           event.Type,
 			ReportingController: event.ReportingController,
 			Action:              event.Action,
-		}
-		if ke.Count == 0 {
-			ke.Count = 1
-		}
-		if event.Series != nil {
-			if event.Series.Count > 0 {
-				ke.Count = event.Series.Count
-			}
-			if !event.Series.LastObservedTime.IsZero() {
-				ke.LastTimestamp = event.Series.LastObservedTime.UTC().Format(time.RFC3339)
-			}
-		}
-		if !event.FirstTimestamp.IsZero() {
-			ke.FirstTimestamp = event.FirstTimestamp.UTC().Format(time.RFC3339)
-		}
-		if ke.LastTimestamp == "" && !event.LastTimestamp.IsZero() {
-			ke.LastTimestamp = event.LastTimestamp.UTC().Format(time.RFC3339)
+			FirstTimestamp:      formatMetaTime(event.FirstTimestamp),
+			LastTimestamp:       formatMetaTime(event.LastTimestamp),
 		}
 		switch {
-		case event.Series != nil && !event.Series.LastObservedTime.IsZero():
-			ke.Timestamp = ke.LastTimestamp
 		case !event.EventTime.IsZero():
-			ke.Timestamp = event.EventTime.UTC().Format(time.RFC3339)
+			ke.Timestamp = event.EventTime.Format(time.RFC3339)
 		case !event.LastTimestamp.IsZero():
-			ke.Timestamp = ke.LastTimestamp
+			ke.Timestamp = event.LastTimestamp.Format(time.RFC3339)
 		case !event.FirstTimestamp.IsZero():
-			ke.Timestamp = ke.FirstTimestamp
-		case !event.CreationTimestamp.IsZero():
-			ke.Timestamp = event.CreationTimestamp.UTC().Format(time.RFC3339)
+			ke.Timestamp = event.FirstTimestamp.Format(time.RFC3339)
 		}
 		karpenterLog.Info("karpenter_event",
 			"uid", ke.UID,
@@ -233,6 +216,7 @@ func collectKarpenterEvents(
 		)
 		metrics.Events = append(metrics.Events, ke)
 	}
+	lastSeenResourceVersion = maxRV
 	karpenterLog.Info("karpenter_events_collected", "count", len(metrics.Events))
 	return true
 }
@@ -252,51 +236,27 @@ func isPendingPodSchedulerEvent(event *corev1.Event, pendingPodRefs map[string]b
 	return pendingPodRefs[uid] || pendingPodRefs[key]
 }
 
-var nodePoolGVRs = []schema.GroupVersionResource{
-	{Group: "karpenter.sh", Version: "v1", Resource: "nodepools"},
-	{Group: "karpenter.sh", Version: "v1beta1", Resource: "nodepools"},
+var nodePoolGVR = schema.GroupVersionResource{
+	Group:    "karpenter.sh",
+	Version:  "v1",
+	Resource: "nodepools",
 }
 
-var nodeClaimGVRs = []schema.GroupVersionResource{
-	{Group: "karpenter.sh", Version: "v1", Resource: "nodeclaims"},
-	{Group: "karpenter.sh", Version: "v1beta1", Resource: "nodeclaims"},
-}
-
-type nodeClassRef struct {
-	Group   string
-	Version string
-	Kind    string
-	Name    string
-}
-
-func listFirstAvailable(
-	ctx context.Context,
-	dynClient dynamic.Interface,
-	candidates []schema.GroupVersionResource,
-) (*unstructured.UnstructuredList, schema.GroupVersionResource, error) {
-	var lastErr error
-	for _, gvr := range candidates {
-		list, err := dynClient.Resource(gvr).List(ctx, metav1.ListOptions{})
-		if err == nil {
-			return list, gvr, nil
-		}
-		lastErr = err
-		if !apierrors.IsNotFound(err) && !strings.Contains(strings.ToLower(err.Error()), "resource not found") {
-			return nil, gvr, err
-		}
-	}
-	return nil, schema.GroupVersionResource{}, lastErr
+var nodeClaimGVR = schema.GroupVersionResource{
+	Group:    "karpenter.sh",
+	Version:  "v1",
+	Resource: "nodeclaims",
 }
 
 func collectNodePools(
 	ctx context.Context,
 	client kubernetes.Interface,
 	dynClient dynamic.Interface,
-) ([]NodePoolInfo, schema.GroupVersionResource, []nodeClassRef, bool, error) {
-	list, gvr, err := listFirstAvailable(ctx, dynClient, nodePoolGVRs)
+) ([]NodePoolInfo, bool, error) {
+	list, err := dynClient.Resource(nodePoolGVR).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		karpenterLog.Warn("nodepool_list_failed", "error", err)
-		return nil, schema.GroupVersionResource{}, nil, false, err
+		return nil, false, err
 	}
 
 	nodeCountByPool := make(map[string]int)
@@ -313,40 +273,29 @@ func collectNodePools(
 	}
 
 	nodePools := make([]NodePoolInfo, 0, len(list.Items))
-	refs := make([]nodeClassRef, 0, len(list.Items))
 	for i := range list.Items {
 		item := &list.Items[i]
 		name := item.GetName()
-		nodeCount := nodeCountByPool[name]
-		if statusNodes, ok := int64At(item.Object, "status", "nodes"); ok {
-			nodeCount = int(statusNodes)
-		} else if statusNodes, ok := quantityAt(item.Object, "status", "resources", "nodes"); ok {
-			nodeCount = int(statusNodes.Value())
-		}
 		np := NodePoolInfo{
-			Name:      name,
-			NodeCount: nodeCount,
-			UID:       string(item.GetUID()),
+			Name:               name,
+			NodeCount:          nodeCountByPool[name],
+			UID:                string(item.GetUID()),
+			NodeClassName:      stringAt(item.Object, "spec", "template", "spec", "nodeClassRef", "name"),
+			CPULimitMillicores: quantityMilliAt(item.Object, "spec", "limits", "cpu"),
+			MemoryLimitBytes:   quantityValueAt(item.Object, "spec", "limits", "memory"),
+			NodeLimit:          quantityValueAt(item.Object, "spec", "limits", "nodes"),
+			CPUUsageMillicores: quantityMilliAt(item.Object, "status", "resources", "cpu"),
+			MemoryUsageBytes:   quantityValueAt(item.Object, "status", "resources", "memory"),
 		}
 		if weight, ok := int64At(item.Object, "spec", "weight"); ok {
 			np.Weight = &weight
-		}
-		np.CPULimitMillicores = quantityMilliAt(item.Object, "spec", "limits", "cpu")
-		np.MemoryLimitBytes = quantityValueAt(item.Object, "spec", "limits", "memory")
-		np.NodeLimit = quantityValueAt(item.Object, "spec", "limits", "nodes")
-		np.CPUUsageMillicores = quantityMilliAt(item.Object, "status", "resources", "cpu")
-		np.MemoryUsageBytes = quantityValueAt(item.Object, "status", "resources", "memory")
-
-		if ref := nodeClassRefAt(item.Object); ref.Name != "" {
-			np.NodeClassName = ref.Name
-			refs = append(refs, ref)
 		}
 		if condition, ok := conditionByType(item.Object, "Ready"); ok {
 			if ready, known := conditionBool(condition); known {
 				np.Ready = &ready
 			}
-			np.Reason, _, _ = unstructured.NestedString(condition, "reason")
-			np.Message, _, _ = unstructured.NestedString(condition, "message")
+			np.Reason = stringAt(condition, "reason")
+			np.Message = stringAt(condition, "message")
 			if generation, ok := int64At(condition, "observedGeneration"); ok {
 				np.ObservedGeneration = &generation
 			}
@@ -355,64 +304,56 @@ func collectNodePools(
 		nodePools = append(nodePools, np)
 	}
 	karpenterLog.Info("nodepools_collected", "count", len(nodePools))
-	return nodePools, gvr, refs, nodeLabelsOK, nil
+	return nodePools, nodeLabelsOK, nil
 }
 
-func collectNodeClaims(
-	ctx context.Context,
-	dynClient dynamic.Interface,
-) ([]NodeClaimInfo, []nodeClassRef, error) {
-	list, gvr, err := listFirstAvailable(ctx, dynClient, nodeClaimGVRs)
+func collectNodeClaims(ctx context.Context, dynClient dynamic.Interface) ([]NodeClaimInfo, error) {
+	list, err := dynClient.Resource(nodeClaimGVR).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		karpenterLog.Warn("nodeclaim_list_failed", "error", err)
-		return nil, nil, err
+		return nil, err
 	}
 
 	claims := make([]NodeClaimInfo, 0, len(list.Items))
-	refs := make([]nodeClassRef, 0, len(list.Items))
 	for i := range list.Items {
 		item := &list.Items[i]
 		labels := item.GetLabels()
-		ref := nodeClassRefAt(item.Object)
-		if ref.Name != "" {
-			refs = append(refs, ref)
-		}
 		claim := NodeClaimInfo{
 			UID:           string(item.GetUID()),
 			Name:          item.GetName(),
 			NodePoolName:  labels["karpenter.sh/nodepool"],
-			NodeClassName: ref.Name,
+			NodeClassName: stringAt(item.Object, "spec", "nodeClassRef", "name"),
 			NodeName:      stringAt(item.Object, "status", "nodeName"),
 			ProviderID:    stringAt(item.Object, "status", "providerID"),
 			InstanceType:  labels["node.kubernetes.io/instance-type"],
 			Zone:          labels["topology.kubernetes.io/zone"],
 			CapacityType:  labels["karpenter.sh/capacity-type"],
 			CreatedAt:     formatMetaTime(item.GetCreationTimestamp()),
+			LaunchedAt:    trueConditionTransition(item.Object, "Launched"),
+			RegisteredAt:  trueConditionTransition(item.Object, "Registered"),
+			InitializedAt: trueConditionTransition(item.Object, "Initialized"),
+			ReadyAt:       trueConditionTransition(item.Object, "Ready"),
 		}
 		if deletionTime := item.GetDeletionTimestamp(); deletionTime != nil {
-			claim.DeletionTimestamp = deletionTime.UTC().Format(time.RFC3339)
+			claim.DeletionTimestamp = formatMetaTime(*deletionTime)
 		}
-		claim.LaunchedAt = trueConditionTransition(item.Object, "Launched")
-		claim.RegisteredAt = trueConditionTransition(item.Object, "Registered")
-		claim.InitializedAt = trueConditionTransition(item.Object, "Initialized")
-		claim.ReadyAt = trueConditionTransition(item.Object, "Ready")
 		claim.Status, claim.Reason, claim.Message = nodeClaimConditionState(item.Object)
 		claims = append(claims, claim)
 	}
-	karpenterLog.Info("nodeclaims_collected", "count", len(claims), "version", gvr.Version)
-	return claims, refs, nil
+	karpenterLog.Info("nodeclaims_collected", "count", len(claims))
+	return claims, nil
 }
 
 func collectPendingPods(
 	ctx context.Context,
 	client kubernetes.Interface,
 ) ([]PendingPodInfo, map[string]bool, bool) {
-	list, err := client.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+	list, err := client.CoreV1().Pods("").List(ctx, metav1.ListOptions{FieldSelector: "status.phase=Pending"})
 	if err != nil {
 		karpenterLog.Warn("pending_pods_list_failed", "error", err)
 		return nil, nil, false
 	}
-	rsToDeploy := replicaSetToDeploymentMap(ctx, client)
+	var rsToDeploy map[string]string
 	pending := make([]PendingPodInfo, 0)
 	refs := make(map[string]bool)
 	for i := range list.Items {
@@ -420,14 +361,18 @@ func collectPendingPods(
 		if pod.Status.Phase != corev1.PodPending || pod.Spec.NodeName != "" {
 			continue
 		}
-		cpu, memory := schedulingRequests(pod.Spec)
+		if rsToDeploy == nil {
+			rsToDeploy = replicaSetToDeploymentMap(ctx, client)
+		}
 		item := PendingPodInfo{
-			UID:                  string(pod.UID),
-			Namespace:            pod.Namespace,
-			Name:                 pod.Name,
-			CreatedAt:            formatMetaTime(pod.CreationTimestamp),
-			CPURequestMillicores: cpu,
-			MemoryRequestBytes:   memory,
+			UID:       string(pod.UID),
+			Namespace: pod.Namespace,
+			Name:      pod.Name,
+			CreatedAt: formatMetaTime(pod.CreationTimestamp),
+		}
+		for _, container := range pod.Spec.Containers {
+			item.CPURequestMillicores += container.Resources.Requests.Cpu().MilliValue()
+			item.MemoryRequestBytes += container.Resources.Requests.Memory().Value()
 		}
 		if owner := podWorkloadOwner(pod.OwnerReferences, pod.Namespace, rsToDeploy); owner != nil {
 			item.OwnerReference = *owner
@@ -447,58 +392,28 @@ func collectPendingPods(
 	return pending, refs, true
 }
 
-func schedulingRequests(spec corev1.PodSpec) (cpuMillicores, memoryBytes int64) {
-	for _, container := range spec.Containers {
-		cpuMillicores += container.Resources.Requests.Cpu().MilliValue()
-		memoryBytes += container.Resources.Requests.Memory().Value()
-	}
-
-	// Restartable init containers contribute for the pod lifetime. Ordinary init
-	// containers run sequentially, so scheduling uses the largest init-stage total.
-	var restartableCPU, restartableMemory, maxInitCPU, maxInitMemory int64
-	for _, container := range spec.InitContainers {
-		cpu := container.Resources.Requests.Cpu().MilliValue()
-		memory := container.Resources.Requests.Memory().Value()
-		if container.RestartPolicy != nil && *container.RestartPolicy == corev1.ContainerRestartPolicyAlways {
-			restartableCPU += cpu
-			restartableMemory += memory
-			maxInitCPU = max(maxInitCPU, restartableCPU)
-			maxInitMemory = max(maxInitMemory, restartableMemory)
-			continue
-		}
-		maxInitCPU = max(maxInitCPU, restartableCPU+cpu)
-		maxInitMemory = max(maxInitMemory, restartableMemory+memory)
-	}
-	cpuMillicores = max(cpuMillicores+restartableCPU, maxInitCPU)
-	memoryBytes = max(memoryBytes+restartableMemory, maxInitMemory)
-	cpuMillicores += spec.Overhead.Cpu().MilliValue()
-	memoryBytes += spec.Overhead.Memory().Value()
-	return cpuMillicores, memoryBytes
-}
-
-func collectKarpenterVersions(ctx context.Context, client kubernetes.Interface) (controller, provider string) {
+func collectKarpenterVersion(ctx context.Context, client kubernetes.Interface) string {
 	deployments, err := client.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		karpenterLog.Warn("karpenter_version_list_failed", "error", err)
-		return "", ""
+		return ""
 	}
 	for i := range deployments.Items {
 		deployment := &deployments.Items[i]
 		if !isKarpenterDeployment(deployment) {
 			continue
 		}
-		controller = deployment.Labels["app.kubernetes.io/version"]
-		if controller == "" {
-			for _, container := range deployment.Spec.Template.Spec.Containers {
-				if strings.Contains(strings.ToLower(container.Image), "karpenter") {
-					controller = imageVersion(container.Image)
-					break
-				}
+		if version := deployment.Labels["app.kubernetes.io/version"]; version != "" {
+			return version
+		}
+		for _, container := range deployment.Spec.Template.Spec.Containers {
+			if strings.Contains(strings.ToLower(container.Image), "karpenter") {
+				return imageVersion(container.Image)
 			}
 		}
-		return controller, ""
+		return ""
 	}
-	return "", ""
+	return ""
 }
 
 func isKarpenterDeployment(deployment *appsv1.Deployment) bool {
@@ -514,70 +429,6 @@ func imageVersion(image string) string {
 		return ""
 	}
 	return strings.TrimPrefix(withoutDigest[colon+1:], "v")
-}
-
-func verifyReferencedNodeClasses(ctx context.Context, dynClient dynamic.Interface, refs []nodeClassRef) {
-	seen := make(map[nodeClassRef]bool)
-	for _, ref := range refs {
-		if ref.Group == "" || ref.Kind == "" || ref.Name == "" || seen[ref] {
-			continue
-		}
-		seen[ref] = true
-		resourceName := strings.ToLower(ref.Kind)
-		if strings.HasSuffix(resourceName, "class") {
-			resourceName += "es"
-		} else {
-			resourceName += "s"
-		}
-		found := false
-		versions := []string{ref.Version, "v1", "v1beta1", "v1alpha2", "v1alpha1"}
-		triedVersions := make(map[string]bool)
-		for _, version := range versions {
-			if version == "" || triedVersions[version] {
-				continue
-			}
-			triedVersions[version] = true
-			gvr := schema.GroupVersionResource{Group: ref.Group, Version: version, Resource: resourceName}
-			if _, err := dynClient.Resource(gvr).Get(ctx, ref.Name, metav1.GetOptions{}); err == nil {
-				found = true
-				break
-			} else if !apierrors.IsNotFound(err) {
-				karpenterLog.Warn("nodeclass_get_failed", "group", ref.Group, "kind", ref.Kind, "name", ref.Name, "error", err)
-				break
-			}
-		}
-		if !found {
-			karpenterLog.Warn("nodeclass_not_found", "group", ref.Group, "kind", ref.Kind, "name", ref.Name)
-		}
-	}
-}
-
-func nodeClassRefAt(object map[string]any) nodeClassRef {
-	ref := nodeClassRefFrom(object, "spec", "template", "spec", "nodeClassRef")
-	if ref.Name != "" {
-		return ref
-	}
-	return nodeClassRefFrom(object, "spec", "nodeClassRef")
-}
-
-func nodeClassRefFrom(object map[string]any, fields ...string) nodeClassRef {
-	groupFields := append(append([]string{}, fields...), "group")
-	kindFields := append(append([]string{}, fields...), "kind")
-	nameFields := append(append([]string{}, fields...), "name")
-	apiVersionFields := append(append([]string{}, fields...), "apiVersion")
-	ref := nodeClassRef{
-		Group: stringAt(object, groupFields...),
-		Kind:  stringAt(object, kindFields...),
-		Name:  stringAt(object, nameFields...),
-	}
-	apiVersion := stringAt(object, apiVersionFields...)
-	if parts := strings.SplitN(apiVersion, "/", 2); len(parts) == 2 {
-		if ref.Group == "" {
-			ref.Group = parts[0]
-		}
-		ref.Version = parts[1]
-	}
-	return ref
 }
 
 func conditionByType(object map[string]any, conditionType string) (map[string]any, bool) {
@@ -689,6 +540,11 @@ func formatMetaTime(value metav1.Time) string {
 }
 
 func logKarpenterMetrics(metrics *KarpenterMetrics) {
+	data, err := json.Marshal(metrics)
+	if err != nil {
+		karpenterLog.Error("karpenter_metrics_marshal_failed", "error", err)
+		return
+	}
 	karpenterLog.Info("karpenter_metrics_collected",
 		"cluster_id", metrics.ClusterID,
 		"karpenter_events", len(metrics.Events),
@@ -697,4 +553,5 @@ func logKarpenterMetrics(metrics *KarpenterMetrics) {
 		"pending_pods", len(metrics.PendingPods),
 		"capabilities", metrics.Capabilities,
 	)
+	karpenterLog.Info("karpenter_metrics", "payload", json.RawMessage(data))
 }
