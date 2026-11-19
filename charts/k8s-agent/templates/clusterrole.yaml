@@ -41,6 +41,13 @@ rules:
   - apiGroups: ["karpenter.sh"]
     resources: ["nodeclaims", "nodepools"]
     verbs: ["get", "list", "watch"]
+  # Read provider NodeClasses referenced by Karpenter NodePools and NodeClaims
+  - apiGroups: ["karpenter.k8s.aws"]
+    resources: ["ec2nodeclasses"]
+    verbs: ["get"]
+  - apiGroups: ["karpenter.azure.com"]
+    resources: ["aksnodeclasses"]
+    verbs: ["get"]
   # Read KEDA CRDs for autoscaling metrics
   - apiGroups: ["keda.sh"]
     resources: ["scaledobjects"]
