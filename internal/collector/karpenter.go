@@ -59,12 +59,14 @@ type NodeClaimInfo struct {
 }
 
 type PendingPodInfo struct {
-	UID              string `json:"uid"`
-	Namespace        string `json:"namespace"`
-	Name             string `json:"name"`
-	CreatedAt        string `json:"created_at,omitempty"`
-	ConditionReason  string `json:"condition_reason,omitempty"`
-	ConditionMessage string `json:"condition_message,omitempty"`
+	UID                  string `json:"uid"`
+	Namespace            string `json:"namespace"`
+	Name                 string `json:"name"`
+	CreatedAt            string `json:"created_at,omitempty"`
+	CPURequestMillicores int64  `json:"cpu_request_millicores"`
+	MemoryRequestBytes   int64  `json:"memory_request_bytes"`
+	ConditionReason      string `json:"condition_reason,omitempty"`
+	ConditionMessage     string `json:"condition_message,omitempty"`
 }
 
 type KarpenterMetrics struct {
@@ -92,9 +94,12 @@ func CollectKarpenter(ctx context.Context, client kubernetes.Interface, dynClien
 	if collectKarpenterEvents(ctx, client, metrics) {
 		metrics.Capabilities = append(metrics.Capabilities, "events")
 	}
-	if dynClient != nil && collectNodePools(ctx, client, dynClient, metrics) {
-		collectNodeClaims(ctx, dynClient, metrics)
-		collectPendingPods(ctx, client, metrics)
+	if dynClient != nil {
+		nodePoolsOK := collectNodePools(ctx, client, dynClient, metrics)
+		nodeClaimsOK := collectNodeClaims(ctx, dynClient, metrics)
+		if nodePoolsOK || nodeClaimsOK {
+			collectPendingPods(ctx, client, metrics)
+		}
 	}
 
 	logKarpenterMetrics(metrics)
@@ -222,11 +227,11 @@ func collectNodePools(ctx context.Context, client kubernetes.Interface, dynClien
 	return true
 }
 
-func collectNodeClaims(ctx context.Context, dynClient dynamic.Interface, metrics *KarpenterMetrics) {
+func collectNodeClaims(ctx context.Context, dynClient dynamic.Interface, metrics *KarpenterMetrics) bool {
 	list, err := dynClient.Resource(nodeClaimGVR).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		karpenterLog.Warn("nodeclaim_list_failed", "error", err)
-		return
+		return false
 	}
 	for i := range list.Items {
 		item := list.Items[i].Object
@@ -249,6 +254,7 @@ func collectNodeClaims(ctx context.Context, dynClient dynamic.Interface, metrics
 		metrics.NodeClaims = append(metrics.NodeClaims, claim)
 	}
 	metrics.Capabilities = append(metrics.Capabilities, "node_claims")
+	return true
 }
 
 func collectPendingPods(ctx context.Context, client kubernetes.Interface, metrics *KarpenterMetrics) {
@@ -259,7 +265,7 @@ func collectPendingPods(ctx context.Context, client kubernetes.Interface, metric
 	}
 	for i := range pods.Items {
 		pod := &pods.Items[i]
-		if pod.Status.Phase != corev1.PodPending || pod.Spec.NodeName != "" {
+		if pod.Status.Phase != corev1.PodPending || pod.Spec.NodeName != "" || pod.DeletionTimestamp != nil {
 			continue
 		}
 		pending := PendingPodInfo{
@@ -267,6 +273,10 @@ func collectPendingPods(ctx context.Context, client kubernetes.Interface, metric
 			Namespace: pod.Namespace,
 			Name:      pod.Name,
 			CreatedAt: pod.CreationTimestamp.UTC().Format(time.RFC3339),
+		}
+		for _, container := range pod.Spec.Containers {
+			pending.CPURequestMillicores += container.Resources.Requests.Cpu().MilliValue()
+			pending.MemoryRequestBytes += container.Resources.Requests.Memory().Value()
 		}
 		for _, c := range pod.Status.Conditions {
 			if c.Type == corev1.PodScheduled {
