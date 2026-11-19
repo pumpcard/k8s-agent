@@ -51,15 +51,18 @@ type NodeClaimInfo struct {
 	Name          string `json:"name"`
 	Reason        string `json:"reason,omitempty"`
 	Message       string `json:"message,omitempty"`
+	CreatedAt     string `json:"created_at,omitempty"`
 	LaunchedAt    string `json:"launched_at,omitempty"`
 	RegisteredAt  string `json:"registered_at,omitempty"`
 	InitializedAt string `json:"initialized_at,omitempty"`
+	ReadyAt       string `json:"ready_at,omitempty"`
 }
 
 type PendingPodInfo struct {
 	UID              string `json:"uid"`
 	Namespace        string `json:"namespace"`
 	Name             string `json:"name"`
+	CreatedAt        string `json:"created_at,omitempty"`
 	ConditionReason  string `json:"condition_reason,omitempty"`
 	ConditionMessage string `json:"condition_message,omitempty"`
 }
@@ -230,9 +233,11 @@ func collectNodeClaims(ctx context.Context, dynClient dynamic.Interface, metrics
 		claim := NodeClaimInfo{
 			UID:           string(list.Items[i].GetUID()),
 			Name:          list.Items[i].GetName(),
+			CreatedAt:     list.Items[i].GetCreationTimestamp().UTC().Format(time.RFC3339),
 			LaunchedAt:    trueSince(item, "Launched"),
 			RegisteredAt:  trueSince(item, "Registered"),
 			InitializedAt: trueSince(item, "Initialized"),
+			ReadyAt:       trueSince(item, "Ready"),
 		}
 		for _, conditionType := range []string{"Launched", "Registered", "Initialized", "Ready"} {
 			if c := conditionAt(item, conditionType); c != nil && c["status"] != "True" {
@@ -257,7 +262,12 @@ func collectPendingPods(ctx context.Context, client kubernetes.Interface, metric
 		if pod.Status.Phase != corev1.PodPending || pod.Spec.NodeName != "" {
 			continue
 		}
-		pending := PendingPodInfo{UID: string(pod.UID), Namespace: pod.Namespace, Name: pod.Name}
+		pending := PendingPodInfo{
+			UID:       string(pod.UID),
+			Namespace: pod.Namespace,
+			Name:      pod.Name,
+			CreatedAt: pod.CreationTimestamp.UTC().Format(time.RFC3339),
+		}
 		for _, c := range pod.Status.Conditions {
 			if c.Type == corev1.PodScheduled {
 				pending.ConditionReason, pending.ConditionMessage = c.Reason, c.Message

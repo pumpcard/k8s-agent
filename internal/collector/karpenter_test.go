@@ -3,6 +3,7 @@ package collector
 import (
 	"context"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,7 +30,7 @@ func TestCollectKarpenter(t *testing.T) {
 	nodeClaim := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "karpenter.sh/v1",
 		"kind":       "NodeClaim",
-		"metadata":   map[string]any{"name": "default-abc", "uid": "claim-uid"},
+		"metadata":   map[string]any{"name": "default-abc", "uid": "claim-uid", "creationTimestamp": "2026-11-18T19:59:00Z"},
 		"status": map[string]any{
 			"conditions": []any{
 				map[string]any{"type": "Launched", "status": "True", "lastTransitionTime": "2026-11-18T20:00:00Z"},
@@ -44,7 +45,12 @@ func TestCollectKarpenter(t *testing.T) {
 		nodeClaim,
 	)
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{UID: "pod-uid", Namespace: "default", Name: "api"},
+		ObjectMeta: metav1.ObjectMeta{
+			UID:               "pod-uid",
+			Namespace:         "default",
+			Name:              "api",
+			CreationTimestamp: metav1.NewTime(time.Date(2026, 11, 18, 19, 58, 0, 0, time.UTC)),
+		},
 		Status: corev1.PodStatus{
 			Phase: corev1.PodPending,
 			Conditions: []corev1.PodCondition{
@@ -72,13 +78,13 @@ func TestCollectKarpenter(t *testing.T) {
 	}
 
 	claim := metrics.NodeClaims[0]
-	if claim.UID != "claim-uid" || claim.LaunchedAt != "2026-11-18T20:00:00Z" ||
-		claim.RegisteredAt != "" || claim.Reason != "Pending" || claim.Message != "waiting" {
+	if claim.UID != "claim-uid" || claim.CreatedAt != "2026-11-18T19:59:00Z" || claim.LaunchedAt != "2026-11-18T20:00:00Z" ||
+		claim.RegisteredAt != "" || claim.ReadyAt != "" || claim.Reason != "Pending" || claim.Message != "waiting" {
 		t.Errorf("node claim = %+v", claim)
 	}
 
 	pending := metrics.PendingPods[0]
-	if pending.UID != "pod-uid" || pending.ConditionReason != "Unschedulable" || pending.ConditionMessage != "no nodes" {
+	if pending.UID != "pod-uid" || pending.CreatedAt != "2026-11-18T19:58:00Z" || pending.ConditionReason != "Unschedulable" || pending.ConditionMessage != "no nodes" {
 		t.Errorf("pending pod = %+v", pending)
 	}
 }
